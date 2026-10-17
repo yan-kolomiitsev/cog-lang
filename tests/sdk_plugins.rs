@@ -72,11 +72,22 @@ fn separately_compiled_rust_plugin_uses_c_abi_and_contains_panics() {
     // Explicit-target Cargo builds keep host proc macros in a separate directory.
     let profile = dependency_directory.parent().unwrap().file_name().unwrap();
     for parent in dependency_directory.ancestors().take(4) {
-        let host_dependencies = parent.join(profile).join("deps");
+        let profile_directory = parent.join(profile);
+        let host_dependencies = profile_directory.join("deps");
         if host_dependencies.is_dir() {
             compiler
                 .arg("-L")
                 .arg(format!("dependency={}", host_dependencies.display()));
+        }
+        if let Ok(build_outputs) = std::fs::read_dir(profile_directory.join("build")) {
+            for build in build_outputs.flatten() {
+                let output = build.path().join("out");
+                if output.is_dir() {
+                    compiler
+                        .arg("-L")
+                        .arg(format!("native={}", output.display()));
+                }
+            }
         }
     }
     check(&mut compiler);
