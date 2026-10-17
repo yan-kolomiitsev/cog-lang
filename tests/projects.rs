@@ -8,7 +8,10 @@ static NEXT: AtomicUsize = AtomicUsize::new(0);
 struct Fixture(PathBuf);
 impl Fixture {
     fn new() -> Self {
-        let root = std::env::temp_dir().join(format!(
+        Self::new_in(&std::env::temp_dir())
+    }
+    fn new_in(parent: &std::path::Path) -> Self {
+        let root = parent.join(format!(
             "cog-project-{}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
@@ -844,14 +847,15 @@ fn comptime_package_import_without_collision_resolves_unique_module() {
 
 #[test]
 fn comptime_package_paths_are_relative_to_the_invocation_directory() {
-    let f = Fixture::new();
+    let invocation_dir = std::env::current_dir().unwrap();
+    let f = Fixture::new_in(&invocation_dir.join("target"));
     f.write("package.kdl", "package \"app\" version=\"0.1.0\"\n");
     let external = f.0.join("external/game");
     f.write(
         "external/game/src/random.cog",
         "public fn answer() -> int { 9 }",
     );
-    let relative = relative_path(&std::env::current_dir().unwrap(), &external);
+    let relative = relative_path(&invocation_dir, &external);
     assert!(
         relative.is_relative(),
         "expected a relative path, got {relative:?}"
