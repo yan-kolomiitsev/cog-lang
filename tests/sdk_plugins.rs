@@ -38,6 +38,27 @@ fn check(command: &mut Command) {
     );
 }
 
+fn cargo_link_search_directives(output: &str) -> impl Iterator<Item = &str> {
+    output.lines().filter_map(|line| {
+        line.strip_prefix("cargo:rustc-link-search=")
+            .or_else(|| line.strip_prefix("cargo::rustc-link-search="))
+    })
+}
+
+#[test]
+fn cargo_link_search_directives_accept_both_cargo_output_syntaxes() {
+    let output = concat!(
+        "cargo:rustc-link-search=native=C:\\sdk\\lib\n",
+        "cargo::rustc-link-search=all=C:\\other\\lib\n",
+        "cargo:rerun-if-changed=build.rs\n",
+    );
+
+    assert_eq!(
+        cargo_link_search_directives(output).collect::<Vec<_>>(),
+        [r"native=C:\sdk\lib", r"all=C:\other\lib"]
+    );
+}
+
 #[test]
 fn separately_compiled_rust_plugin_uses_c_abi_and_contains_panics() {
     let directory = Directory::new();
@@ -81,11 +102,17 @@ fn separately_compiled_rust_plugin_uses_c_abi_and_contains_panics() {
         }
         if let Ok(build_outputs) = std::fs::read_dir(profile_directory.join("build")) {
             for build in build_outputs.flatten() {
-                let output = build.path().join("out");
-                if output.is_dir() {
+                let build_directory = build.path();
+                let generated_output = build_directory.join("out");
+                if generated_output.is_dir() {
                     compiler
                         .arg("-L")
-                        .arg(format!("native={}", output.display()));
+                        .arg(format!("native={}", generated_output.display()));
+                }
+                if let Ok(build_output) = std::fs::read_to_string(build_directory.join("output")) {
+                    for search_path in cargo_link_search_directives(&build_output) {
+                        compiler.arg("-L").arg(search_path);
+                    }
                 }
             }
         }
