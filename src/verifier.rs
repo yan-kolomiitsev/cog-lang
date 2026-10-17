@@ -346,11 +346,12 @@ pub(crate) fn verify(program: &CompiledProgram) -> Result<(), String> {
                     return Err(failure(pc, "direct call signature mismatch"));
                 }
             }
-            Instruction::MakeClosure(target, captures) => {
-                if signature(program, *target)?.captures != *captures {
-                    return Err(failure(pc, "closure capture signature mismatch"));
-                }
+            Instruction::MakeClosure(target, captures)
+                if signature(program, *target)?.captures != *captures =>
+            {
+                return Err(failure(pc, "closure capture signature mismatch"));
             }
+            Instruction::MakeClosure(_, _) => {}
             Instruction::Push(value) => function_constant(program, value)?,
             Instruction::PushArray(template) => template_functions(program, template)?,
             _ => {}
@@ -2051,7 +2052,7 @@ fn truncate_values(
     pc: usize,
     fact_work: &mut usize,
 ) -> Result<(), String> {
-    if !facts.range(first_removed..).next().is_some() {
+    if facts.range(first_removed..).next().is_none() {
         return Ok(());
     }
     charge(fact_work, facts.len(), pc)?;
@@ -2092,7 +2093,7 @@ fn truncate_aggregate_shapes(
     pc: usize,
     fact_work: &mut usize,
 ) -> Result<(), String> {
-    if !facts.range(first_removed..).next().is_some() {
+    if facts.range(first_removed..).next().is_none() {
         return Ok(());
     }
     charge(fact_work, aggregate_shape_cost(facts), pc)?;
@@ -2132,7 +2133,7 @@ fn truncate_record_shapes(
     pc: usize,
     fact_work: &mut usize,
 ) -> Result<(), String> {
-    if !facts.range(first_removed..).next().is_some() {
+    if facts.range(first_removed..).next().is_none() {
         return Ok(());
     }
     charge(fact_work, record_shape_cost(facts), pc)?;

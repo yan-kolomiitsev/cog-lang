@@ -686,32 +686,31 @@ pub(crate) fn check_with_methods(
                     },
                 );
             }
-            Item::Function(f) => {
-                if c.functions.insert(f.name.clone(), f).is_some() {
-                    c.error(
-                        "E1001",
-                        format!("function `{}` defined more than once", f.name),
-                        f.body
-                            .stmts
-                            .first()
-                            .and_then(Stmt::span)
-                            .or_else(|| f.body.tail.as_deref().and_then(Expr::span))
-                            .or(f.result_span.as_ref()),
-                    );
-                }
+            Item::Function(f) if c.functions.insert(f.name.clone(), f).is_some() => {
+                c.error(
+                    "E1001",
+                    format!("function `{}` defined more than once", f.name),
+                    f.body
+                        .stmts
+                        .first()
+                        .and_then(Stmt::span)
+                        .or_else(|| f.body.tail.as_deref().and_then(Expr::span))
+                        .or(f.result_span.as_ref()),
+                );
             }
-            Item::Trait(declaration) => {
+            Item::Function(_) => {}
+            Item::Trait(declaration)
                 if c.traits
                     .insert(declaration.name.clone(), declaration)
-                    .is_some()
-                {
-                    c.error(
-                        "E1001",
-                        format!("trait `{}` defined more than once", declaration.name),
-                        None,
-                    );
-                }
+                    .is_some() =>
+            {
+                c.error(
+                    "E1001",
+                    format!("trait `{}` defined more than once", declaration.name),
+                    None,
+                );
             }
+            Item::Trait(_) => {}
             Item::StructDecl {
                 name,
                 type_params,

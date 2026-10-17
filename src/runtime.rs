@@ -498,7 +498,7 @@ fn bytes_literal(context: &mut RuntimeContext<'_>, args: &[Value]) -> Result<Val
         b'a'..=b'f' => Some(byte - b'a' + 10),
         _ => None,
     };
-    for pair in hex.chunks_exact(2) {
+    for pair in hex.as_chunks::<2>().0 {
         let (Some(hi), Some(lo)) = (digit(pair[0]), digit(pair[1])) else {
             return Err(invalid("bytes literal"));
         };
