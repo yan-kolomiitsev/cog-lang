@@ -861,6 +861,11 @@ fn comptime_package_paths_are_relative_to_the_invocation_directory() {
         "expected a relative path, got {relative:?}"
     );
     let relative = relative.to_string_lossy().replace('\\', "/");
+    let relative = if relative.starts_with("./") || relative.starts_with("../") {
+        relative
+    } else {
+        format!("./{relative}")
+    };
     f.write(
         "src/main.cog",
         &format!("include game from {relative}; use io; use random from game as game_random; fn main() {{ io::println(game_random::answer()); }}"),
