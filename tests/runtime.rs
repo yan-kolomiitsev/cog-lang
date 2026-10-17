@@ -962,6 +962,8 @@ fn entropy_returns_managed_bytes_and_uses_runtime_limits() {
 #[test]
 fn host_permissions_and_existing_errors_prevent_effects_and_are_catchable() {
     let file = TempFile::new();
+    let shell_command = format!("echo unexpected > {}", file.0.display());
+    let shell_command = format!("{shell_command:?}");
     let program = compile(&format!(
         r#"
         use time; use entropy; use process; use random; 
@@ -976,14 +978,14 @@ fn host_permissions_and_existing_errors_prevent_effects_and_are_catchable() {
             require_error(process::env("PATH"));
             const no_arguments: str[] = [];
             require_error(process::run("unused", no_arguments));
-            require_error(process::shell("echo unexpected > {}"));
+            require_error(process::shell({}));
             try {{ random::next(); crash("entropy permission ignored"); }}
             catch(e) {{
                 match e {{ Error::PermissionDenied(op) => {{ require(op == "entropy::bytes"); }}, _ => {{ crash("wrong error"); }} }}
             }}
         }}
     "#,
-        file.0.to_str().unwrap()
+        shell_command
     ));
     interpreter::run_with_capabilities(&program, &mut Vec::new(), VmCapabilities::restricted())
         .unwrap();
