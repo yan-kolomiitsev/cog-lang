@@ -533,9 +533,10 @@ separator according to the host OS.
 | `process::shell(command)` | Explicit `/bin/sh -c` on Unix; unsupported on other targets |
 
 Wall-clock results are not monotonic; use `monotonic_nanos` for elapsed-time
-measurements. Negative sleep yields NegativeSleep;
-nonfinite/unrepresentable durations and pre-epoch clocks fail, and i64 overflow is
-reported. OS scheduling does not guarantee precise wakeups.
+measurements. Negative sleep yields NegativeSleep; nonfinite or unrepresentable
+durations and pre-epoch clocks fail, and i64 overflow is reported. On Windows,
+durations that round to the OS `INFINITE` wait sentinel are rejected instead of
+blocking forever. OS scheduling does not guarantee precise wakeups.
 
 `process::args()` and `process::env(name)` read the current process state. Cog
 arguments and environment values must be valid UTF-8; otherwise the call returns

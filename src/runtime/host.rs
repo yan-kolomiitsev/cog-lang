@@ -28,6 +28,12 @@ pub(super) fn sleep(
         }
         _ => unreachable!(),
     };
+    #[cfg(windows)]
+    if windows_timeout_millis(duration) >= u128::from(u32::MAX) {
+        // Windows uses u32::MAX as INFINITE; passing that timeout would block
+        // forever instead of returning after a finite duration.
+        return Err(invalid("time::sleep"));
+    }
     // Reject durations that cannot be represented by the host clock, before
     // handing them to an OS wait implementation. Sub-second precision is kept.
     std::time::Instant::now()
@@ -35,6 +41,33 @@ pub(super) fn sleep(
         .ok_or_else(|| invalid("time::sleep"))?;
     std::thread::sleep(duration);
     Ok(Value::Nil)
+}
+
+#[cfg(windows)]
+fn windows_timeout_millis(duration: Duration) -> u128 {
+    u128::from(duration.as_secs()) * 1_000 + u128::from(duration.subsec_nanos().div_ceil(1_000_000))
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sleep_timeout_rounding_never_uses_the_infinite_sentinel() {
+        let last_finite_millisecond = Duration::from_millis(u64::from(u32::MAX) - 1);
+        assert_eq!(
+            windows_timeout_millis(last_finite_millisecond),
+            u128::from(u32::MAX) - 1
+        );
+        assert_eq!(
+            windows_timeout_millis(last_finite_millisecond + Duration::from_nanos(1)),
+            u128::from(u32::MAX)
+        );
+        assert_eq!(
+            windows_timeout_millis(Duration::from_millis(u64::from(u32::MAX))),
+            u128::from(u32::MAX)
+        );
+    }
 }
 
 fn epoch(context: &RuntimeContext<'_>, op: &'static str) -> Result<Duration, RuntimeError> {
