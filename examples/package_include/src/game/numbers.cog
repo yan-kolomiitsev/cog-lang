@@ -1,0 +1,11 @@
+comptime Scalar: type = int;
+
+comptime extend Scalar {
+    fn squared(self) -> int {
+        self * self
+    }
+}
+
+public fn twice(value: Scalar) -> int {
+    value.squared() + value.squared()
+}

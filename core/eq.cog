@@ -1,0 +1,24 @@
+// Equality operations available to statically checked generic functions.
+public trait Eq[Other: type] {
+    fn equals(self, other: Other) -> bool;
+}
+
+extend int with Eq[int] {
+    fn equals(self, other: int) -> bool { self == other }
+}
+
+extend float with Eq[float] {
+    fn equals(self, other: float) -> bool { self == other }
+}
+
+extend bool with Eq[bool] {
+    fn equals(self, other: bool) -> bool { self == other }
+}
+
+extend nil with Eq[nil] {
+    fn equals(self, other: nil) -> bool { true }
+}
+
+extend str with Eq[str] {
+    fn equals(self, other: str) -> bool { self == other }
+}

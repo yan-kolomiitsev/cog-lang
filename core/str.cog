@@ -1,0 +1,238 @@
+// String operations implemented in Cog over the existing UTF-8 byte API.
+use bytes;
+use array;
+use fmt;
+use err::Error;
+
+// Unicode White_Space, expressed as complete UTF-8 sequences. All whitespace
+// codepoints fit in one to three bytes. Call only when start < end.
+fn whitespace_width(data, start: int, end: int) -> int {
+    const first = bytes::get(data, start)!!;
+    if first == 32 || (first >= 9 && first <= 13) { return 1; }
+    if first != 194 && first != 225 && first != 226 && first != 227 { return 0; }
+    if end - start < 2 { return 0; }
+
+    const second = bytes::get(data, start + 1)!!;
+    // U+0085 NEXT LINE, U+00A0 NO-BREAK SPACE.
+    if first == 194 && (second == 133 || second == 160) { return 2; }
+    if end - start < 3 { return 0; }
+
+    const third = bytes::get(data, start + 2)!!;
+    // U+1680 OGHAM SPACE MARK.
+    if first == 225 && second == 154 && third == 128 { return 3; }
+    if first == 226 {
+        // U+2000..U+200A, U+2028, U+2029, U+202F.
+        if second == 128 && (
+            (third >= 128 && third <= 138) || third == 168 || third == 169 || third == 175
+        ) { return 3; }
+        // U+205F MEDIUM MATHEMATICAL SPACE.
+        if second == 129 && third == 159 { return 3; }
+    }
+    // U+3000 IDEOGRAPHIC SPACE.
+    if first == 227 && second == 128 && third == 128 { return 3; }
+    0
+}
+
+fn trailing_whitespace_width(data, start: int, end: int) -> int {
+    const last = bytes::get(data, end - 1)!!;
+    if last == 32 || (last >= 9 && last <= 13) { return 1; }
+    if last < 128 { return 0; }
+    if end - start >= 2 && whitespace_width(data, end - 2, end)!! == 2 { return 2; }
+    if end - start >= 3 && whitespace_width(data, end - 3, end)!! == 3 { return 3; }
+    0
+}
+
+fn trim_impl(text: str, left: bool, right: bool) -> str {
+    const data = bytes::from_str(text)!!;
+    const length = bytes::len(data);
+    var start = 0;
+    var end = length;
+
+    while left && start < end {
+        const width = whitespace_width(data, start, end)!!;
+        if width == 0 { break; }
+        start += width;
+    }
+    while right && start < end {
+        const width = trailing_whitespace_width(data, start, end)!!;
+        if width == 0 { break; }
+        end -= width;
+    }
+
+    if start == 0 && end == length {
+        text
+    } else {
+        bytes::to_str(data, start, end - start)
+    }
+}
+
+// Remove Unicode whitespace at both ends, leaving the input unchanged.
+public fn trim(text: str) -> str {
+    trim_impl(text, true, true)
+}
+
+// Remove Unicode whitespace at the start, leaving the input unchanged.
+public fn trim_start(text: str) -> str {
+    trim_impl(text, true, false)
+}
+
+// Remove Unicode whitespace at the end, leaving the input unchanged.
+public fn trim_end(text: str) -> str {
+    trim_impl(text, false, true)
+}
+
+// The caller ensures the complete needle fits at offset.
+fn bytes_match(data, offset: int, needle, length: int) -> bool {
+    for index in 0..length {
+        if bytes::get(data, offset + index)!! != bytes::get(needle, index)!! {
+            return false;
+        }
+    }
+    true
+}
+
+public fn starts_with(text: str, prefix: str) -> bool {
+    const data = bytes::from_str(text)!!;
+    const needle = bytes::from_str(prefix)!!;
+    const length = bytes::len(needle)!!;
+    if length > bytes::len(data)!! { return false; }
+    bytes_match(data, 0, needle, length)
+}
+
+public fn ends_with(text: str, suffix: str) -> bool {
+    const data = bytes::from_str(text)!!;
+    const needle = bytes::from_str(suffix)!!;
+    const length = bytes::len(needle)!!;
+    const offset = bytes::len(data)!! - length;
+    if offset < 0 { return false; }
+    bytes_match(data, offset, needle, length)
+}
+
+public fn contains(text: str, part: str) -> bool {
+    const data = bytes::from_str(text)!!;
+    const needle = bytes::from_str(part)!!;
+    const length = bytes::len(needle)!!;
+    const last = bytes::len(data)!! - length;
+    var offset = 0;
+    while offset <= last {
+        if bytes_match(data, offset, needle, length)!! { return true; }
+        offset += 1;
+    }
+    false
+}
+
+// Replace non-overlapping matches from left to right without normalizing text.
+public fn replace(text: str, pattern: str, replacement: str) -> str {
+    text!!;
+    pattern!!;
+    replacement!!;
+    if pattern == "" { return Error::InvalidArgument("str::replace"); }
+
+    const data = bytes::from_str(text)!!;
+    const needle = bytes::from_str(pattern)!!;
+    const inserted = bytes::from_str(replacement)!!;
+    const length = bytes::len(data)!!;
+    const needle_length = bytes::len(needle)!!;
+    const inserted_length = bytes::len(inserted)!!;
+
+    var matches = 0;
+    var offset = 0;
+    while offset <= length - needle_length {
+        if bytes_match(data, offset, needle, needle_length)!! {
+            matches += 1;
+            offset += needle_length;
+        } else {
+            offset += 1;
+        }
+    }
+    if matches == 0 { return text; }
+
+    const result_length =
+        (length + matches * (inserted_length - needle_length))!!;
+    var result = bytes::new(result_length)!!;
+    var source = 0;
+    var output = 0;
+    offset = 0;
+
+    while offset <= length - needle_length {
+        if bytes_match(data, offset, needle, needle_length)!! {
+            while source < offset {
+                bytes::set(result, output, bytes::get(data, source)!!)!!;
+                source += 1;
+                output += 1;
+            }
+            for index in 0..inserted_length {
+                bytes::set(result, output, bytes::get(inserted, index)!!)!!;
+                output += 1;
+            }
+            offset += needle_length;
+            source = offset;
+        } else {
+            offset += 1;
+        }
+    }
+    while source < length {
+        bytes::set(result, output, bytes::get(data, source)!!)!!;
+        source += 1;
+        output += 1;
+    }
+    bytes::to_str(result, 0, result_length)
+}
+
+// Compare Unicode strings by their UTF-8 byte order, which preserves scalar
+// value order for valid UTF-8. Return -1, 0, or 1.
+public fn compare(left: str, right: str) -> int {
+    const left_bytes = bytes::from_str(left)!!;
+    const right_bytes = bytes::from_str(right)!!;
+    const left_length = bytes::len(left_bytes)!!;
+    const right_length = bytes::len(right_bytes)!!;
+    const common = if left_length < right_length { left_length } else { right_length };
+    for index in 0..common {
+        const left_byte = bytes::get(left_bytes, index)!!;
+        const right_byte = bytes::get(right_bytes, index)!!;
+        if left_byte < right_byte { return -1; }
+        if left_byte > right_byte { return 1; }
+    }
+    if left_length < right_length { return -1; }
+    if left_length > right_length { return 1; }
+    0
+}
+
+// Exact, non-overlapping separators. Preserve leading/trailing empty fields.
+public fn split(text: str, separator: str) {
+    text!!;
+    separator!!;
+    if separator == "" { return Error::InvalidArgument("str::split"); }
+    const data = bytes::from_str(text)!!;
+    const needle = bytes::from_str(separator)!!;
+    const length = bytes::len(needle)!!;
+    const end = bytes::len(data)!!;
+    var result = [];
+    var start = 0;
+    var offset = 0;
+    while offset <= end - length {
+        if bytes_match(data, offset, needle, length)!! {
+            result << bytes::to_str(data, start, offset - start)!!;
+            offset += length;
+            start = offset;
+        } else {
+            offset += 1;
+        }
+    }
+    result << bytes::to_str(data, start, end - start)!!;
+    result
+}
+
+public fn join(parts, separator: str = "") -> str {
+    // Validate even an empty input without mutating the caller's array.
+    array::is_empty(parts)!!;
+    separator!!;
+    var result = str::builder()!!;
+    for index in 0..len(parts) {
+        const part = parts[index]!!;
+        when part is str {} else { return Error::TypeMismatch("str::join"); }
+        if index > 0 { fmt::write(result, "{}", separator)!!; }
+        fmt::write(result, "{}", part)!!;
+    }
+    str::build(result)
+}

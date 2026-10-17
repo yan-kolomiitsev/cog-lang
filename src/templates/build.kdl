@@ -1,0 +1,7 @@
+// Named executable entry points: target "name" entry="relative/source.cog".
+// Select this target with: cog run . --target app
+target "app" entry="src/main.cog"
+
+// Entry paths stay inside the package source tree; absolute paths and .. are invalid.
+// Add another target after creating its source file:
+// target "tool" entry="src/tool.cog"

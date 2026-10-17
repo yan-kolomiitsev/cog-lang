@@ -1,0 +1,36 @@
+pub mod analysis;
+mod arguments;
+pub mod ast;
+mod ast_budget;
+pub mod backend;
+pub mod build;
+pub mod build_inputs;
+mod builtins;
+pub mod bytecode;
+mod comptime;
+pub mod diagnostic;
+pub mod frontend;
+mod generics;
+pub mod heap;
+mod mutability;
+mod string_literals;
+
+pub mod codegen;
+pub mod core_modules;
+
+pub mod config;
+pub mod error;
+pub mod hlparser;
+pub mod instruction;
+pub mod interpreter;
+pub mod lexer;
+pub mod limits;
+pub mod lockfile;
+pub mod parser;
+pub mod project;
+pub mod resolver;
+pub mod runtime;
+pub mod sdk;
+pub mod template;
+pub mod value;
+mod verifier;

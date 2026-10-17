@@ -1,0 +1,19 @@
+include std;
+use io;
+use sort;
+
+fn main() -> nil {
+    var values = [3, 1, 2];
+    const view = values;
+    sort::quick(values);
+    values.append(4).prepend(0);
+    io::println(view)!!; // [0, 1, 2, 3, 4]: shared object, read-only view
+
+    const original = [1];
+    var current = original; // reassignable, currently read-only access
+    // current << 2;       // semantic error: aliasing cannot raise capability
+    current = [10, 20];
+    current << 30;
+    io::println(original)!!;
+    io::println(current)!!;
+}

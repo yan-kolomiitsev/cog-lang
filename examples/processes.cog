@@ -1,0 +1,13 @@
+include std;
+use io;
+use bytes;
+use process;
+
+fn main() -> nil {
+    const child = process::run("echo", ["hello from child"])!!;
+    if !child.success {
+        crash("Child exited unsuccessfully");
+    }
+    const text = bytes::to_str(child.stdout, 0, bytes::len(child.stdout))!!;
+    io::print(text)!!;
+}

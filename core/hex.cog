@@ -1,0 +1,42 @@
+// Hexadecimal text encoding over the existing byte-buffer API.
+use bytes;
+use ascii;
+use err::Error;
+
+fn digit(value: int, uppercase: bool) -> int {
+    if value < 10 { return 48 + value; }
+    if uppercase { 55 + value } else { 87 + value }
+}
+
+fn nibble(value: int) -> int {
+    if ascii::is_digit(value)!! { return value - 48; }
+    const lower = ascii::to_lowercase(value)!!;
+    if lower >= 97 && lower <= 102 { return lower - 87; }
+    Error::ParseFailure("hex", "bytes")
+}
+
+public fn encode(data, uppercase: bool = false) -> str {
+    const length = bytes::len(data)!!;
+    uppercase!!;
+    var result = bytes::new((length * 2)!!)!!;
+    for index in 0..length {
+        const value = bytes::get(data, index)!!;
+        bytes::set(result, index * 2, digit(value / 16, uppercase)!!)!!;
+        bytes::set(result, index * 2 + 1, digit(value % 16, uppercase)!!)!!;
+    }
+    bytes::to_str(result, 0, bytes::len(result)!!)
+}
+
+// Decode pairs of hexadecimal digits; whitespace and prefixes are rejected.
+public fn decode(text: str) {
+    const data = bytes::from_str(text)!!;
+    const length = bytes::len(data)!!;
+    if length % 2 != 0 { return Error::ParseFailure("hex", "bytes"); }
+    var result = bytes::new(length / 2)!!;
+    for index in 0..(length / 2) {
+        const high = nibble(bytes::get(data, index * 2)!!)!!;
+        const low = nibble(bytes::get(data, index * 2 + 1)!!)!!;
+        bytes::set(result, index, high * 16 + low)!!;
+    }
+    result
+}

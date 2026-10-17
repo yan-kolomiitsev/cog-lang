@@ -1,0 +1,9 @@
+target/
+fuzz/corpus/
+fuzz/artifacts/
+fuzz/coverage/
+*.cogb
+
+/dev_docs/
+
+/.idea/

@@ -1,0 +1,17 @@
+include std;
+use io;
+use err::Error;
+
+fn main() -> nil {
+    const name = "Cog";
+    io::println("Plain: {name}, {} and {{}} stay literal")!!;
+    io::println($"Hello, {name}! sum={20 + 22}; item={[10, 20][1]}")!!;
+    io::println($"Braces: {{value}}; nested={$"answer={6 * 7}"}")!!;
+    io::println($"Recovered={("invalid" as int) ?! 7}; nil={nil ?? "missing"}")!!;
+    try {
+        io::println($"Failure={1 / 0}");
+    } catch(error) {
+        when error is Error::DivisionByZero { io::println("Error preserved")!!; }
+        else { crash(error); }
+    }
+}

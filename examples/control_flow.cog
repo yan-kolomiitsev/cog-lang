@@ -1,0 +1,28 @@
+include std;
+use io;
+
+enum Command { Run(count: int), Stop }
+
+fn main() -> nil {
+    var total = 0;
+    for i in 0..5 {
+        if i == 3 { continue; }
+        total += i;
+    }
+    var counter = 0;
+    while counter < 3 {
+        counter += 1;
+    }
+    io::println($"total={total}; counter={counter}")!!;
+
+    const command = Command::Run(count: 7);
+    when command is Command::Run(count) if count > 0 {
+        io::println($"run {count}")!!;
+    }
+    const label = match command {
+        Command::Run(count) => if count > 0 { "ready" } else { "empty" },
+        Command::Stop => "stopped",
+        _ => "unknown",
+    };
+    io::println(label)!!;
+}

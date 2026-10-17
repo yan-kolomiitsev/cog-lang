@@ -1,0 +1,6 @@
+include std;
+use io;
+
+fn main() -> nil {
+    io::println("Hello, Cog!")!!;
+}

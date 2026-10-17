@@ -1,0 +1,155 @@
+use bytes;
+use err::Error;
+
+fn digit(value: int) -> int {
+    if value < 26 { return value + 65; }
+    if value < 52 { return value - 26 + 97; }
+    if value < 62 { return value - 52 + 48; }
+    if value == 62 { return 43; }
+    47
+}
+
+fn sextet(value: int) -> int {
+    if value >= 65 && value <= 90 {
+        return value - 65;
+    }
+    if value >= 97 && value <= 122 {
+        return value - 97 + 26;
+    }
+    if value >= 48 && value <= 57 {
+        return value - 48 + 52;
+    }
+    if value == 43 { return 62; }
+    if value == 47 { return 63; }
+
+    Error::ParseFailure("base64", "bytes")
+}
+
+// Encode arbitrary bytes as padded Base64 text.
+public fn encode(data) -> str {
+    const length = bytes::len(data)!!;
+    const groups = length / 3;
+    const extra = if length % 3 == 0 { 0 } else { 1 };
+    const size = ((groups + extra) * 4)!!;
+
+    var result = bytes::new(size)!!;
+    var offset = 0;
+    var out = 0;
+
+    while offset < length {
+        const a = bytes::get(data, offset)!!;
+
+        const b = if offset + 1 < length {
+            bytes::get(data, offset + 1)!!
+        } else { 0 };
+
+        const c = if offset + 2 < length {
+            bytes::get(data, offset + 2)!!
+        } else { 0 };
+
+        const combined = a * 65536 + b * 256 + c;
+
+        bytes::set(result, out,
+            digit(combined / 262144)!!)!!;
+
+        bytes::set(result, out + 1,
+            digit((combined / 4096) % 64)!!)!!;
+
+        if offset + 1 < length {
+            bytes::set(result, out + 2,
+                digit((combined / 64) % 64)!!)!!;
+        } else {
+            bytes::set(result, out + 2, 61)!!;
+        }
+
+        if offset + 2 < length {
+            bytes::set(result, out + 3,
+                digit(combined % 64)!!)!!;
+        } else {
+            bytes::set(result, out + 3, 61)!!;
+        }
+
+        offset += 3;
+        out += 4;
+    }
+
+    bytes::to_str(result, 0, size)
+}
+
+// Decode strict, padded Base64.
+// Reject invalid digits, whitespace, misplaced padding
+// and nonzero unused padding bits.
+public fn decode(text: str) {
+    const data = bytes::from_str(text)!!;
+    const length = bytes::len(data)!!;
+
+    if length % 4 != 0 {
+        return Error::ParseFailure("base64", "bytes");
+    }
+
+    var size = (length / 4) * 3;
+
+    if length > 0 {
+        if bytes::get(data, length - 1)!! == 61 {
+            size -= 1;
+            if bytes::get(data, length - 2)!! == 61 {
+                size -= 1;
+            }
+        }
+    }
+
+    var result = bytes::new(size)!!;
+    var offset = 0;
+    var out = 0;
+
+    while offset < length {
+        const a = bytes::get(data, offset)!!;
+        const b = bytes::get(data, offset + 1)!!;
+        const c = bytes::get(data, offset + 2)!!;
+        const d = bytes::get(data, offset + 3)!!;
+
+        const pad2 = c == 61;
+        const pad3 = d == 61;
+
+        if pad2 && !pad3 {
+            return Error::ParseFailure("base64", "bytes");
+        }
+
+        if (pad2 || pad3) && offset + 4 != length {
+            return Error::ParseFailure("base64", "bytes");
+        }
+
+        const s0 = sextet(a)!!;
+        const s1 = sextet(b)!!;
+        const s2 = if pad2 { 0 } else { sextet(c)!! };
+        const s3 = if pad3 { 0 } else { sextet(d)!! };
+
+        // Canonical padding requires unused bits to be zero.
+        if pad2 && s1 % 16 != 0 {
+            return Error::ParseFailure("base64", "bytes");
+        }
+        if pad3 && !pad2 && s2 % 4 != 0 {
+            return Error::ParseFailure("base64", "bytes");
+        }
+
+        const combined =
+            s0 * 262144 + s1 * 4096 + s2 * 64 + s3;
+
+        bytes::set(result, out, combined / 65536)!!;
+
+        if !pad2 {
+            bytes::set(result, out + 1,
+                (combined / 256) % 256)!!;
+        }
+
+        if !pad3 {
+            bytes::set(result, out + 2,
+                combined % 256)!!;
+        }
+
+        offset += 4;
+        out += 3;
+    }
+
+    result
+}

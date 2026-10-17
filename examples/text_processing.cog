@@ -1,0 +1,19 @@
+include std;
+use io;
+use str;
+use array;
+
+fn main() -> nil {
+    const fields = str::split("  pear,apple,,plum  ", ",")!!;
+    var cleaned = [];
+    for index in 0..len(fields) {
+        const field = str::trim(fields[index] as str)!!;
+        if field != "" { cleaned << field; }
+    }
+
+    io::println(str::join(cleaned, " | ")!!)!!;
+    io::println(array::contains(cleaned, "apple")!!)!!;
+    io::println(str::join(array::reversed(cleaned)!!, ", ")!!)!!;
+    io::println(str::starts_with("Cog tutorial", "Cog")!!)!!;
+    io::println(str::replace("banana", "ana", "X")!!)!!;
+}

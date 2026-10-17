@@ -1,0 +1,28 @@
+include std;
+use array;
+use clone;
+use io;
+use sort;
+
+trait Measure[Factor: type] {
+    fn measure(self, factor: Factor) -> int;
+}
+
+extend int with Measure[int] {
+    fn measure(self, factor: int) -> int { self * factor }
+}
+
+fn scaled[T: type + Measure[int]](value: T, factor: int) -> int {
+    value.measure(factor)
+}
+
+fn main() {
+    var values = [4, 1, 3, 2];
+    const original = clone::value(values);
+
+    sort::quick(values);
+    io::println(values)!!;
+    io::println(array::min(values))!!;
+    io::println(array::position(original, 3))!!;
+    io::println(scaled(values[0]!!, 2))!!;
+}

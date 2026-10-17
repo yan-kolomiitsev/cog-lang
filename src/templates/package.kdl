@@ -1,0 +1,6 @@
+// Package identity. The name also determines the default artifact filename.
+// Syntax: package "name" version="value"; version is a property of this node.
+{{package}}
+
+// Version is metadata recorded in cog.lock, not a dependency version constraint.
+// Connect local packages in dependencies.kdl; select executables in build.kdl.

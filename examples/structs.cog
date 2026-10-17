@@ -1,0 +1,19 @@
+include std;
+use io;
+
+struct Config {
+    host: str,
+    port: int = 8080,
+    nickname: str? = nil,
+}
+
+fn main() -> nil {
+    const full = Config("localhost", nickname: "production", port: 9090);
+    const minimal = Config(host: "localhost");
+    io::println($"{full.host}:{full.port}")!!;
+    io::println($"default port: {minimal.port}")!!;
+    io::println(minimal.nickname == nil)!!;
+
+    // A nullable field with no default would still require an argument.
+    // Config(42) is a compile error because host expects str.
+}

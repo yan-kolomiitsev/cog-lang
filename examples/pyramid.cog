@@ -1,0 +1,31 @@
+include std;
+use io;
+use str;
+use fmt;
+
+fn main() -> nil {
+    io::print("Enter number of rows: ")!!;
+    const rows = (str::trim(io::read_line()) as int)!!;
+    if rows < 1 {
+        crash("Number of rows must be positive");
+    }
+
+    var row = 1;
+    while row <= rows {
+        var line = str::builder();
+        var spaces = rows - row;
+        while spaces > 0 {
+            fmt::write(line, "{}", " ")!!;
+            spaces -= 1;
+        }
+
+        var stars = 2 * row - 1;
+        while stars > 0 {
+            fmt::write(line, "{}", "*")!!;
+            stars -= 1;
+        }
+
+        io::println(str::build(line))!!;
+        row += 1;
+    }
+}

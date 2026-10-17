@@ -1,0 +1,55 @@
+use err::Error;
+use entropy;
+use bytes;
+
+// A 31-bit linear congruential generator, seeded once from OS entropy.
+const MODULUS = 2147483648;
+var state = 0;
+var initialized = false;
+
+fn ensure_seeded() {
+    if !initialized {
+        const raw = entropy::bytes(4)!!;
+        state = bytes_to_uint(raw)!! % MODULUS;
+        initialized = true;
+    }
+    return nil;
+}
+
+fn bytes_to_uint(raw) {
+    var acc = 0;
+    var i = 0;
+    while i < bytes::len(raw) {
+        acc = acc * 256 + bytes::get(raw, i)!!;
+        i = i + 1;
+    }
+    return acc;
+}
+
+public fn next() {
+    ensure_seeded()!!;
+    state = (state * 1103515245 + 12345) % MODULUS;
+    return state;
+}
+
+public fn range(lo, hi) {
+    const low = range_bound(lo)!!;
+    const high = range_bound(hi)!!;
+    if high <= low { return Error::InvalidArgument("random::range"); }
+    const width = (high - low)!!;
+    if width > MODULUS { return Error::InvalidArgument("random::range"); }
+    // Discard the incomplete remainder interval instead of biasing smaller values.
+    const limit = MODULUS - MODULUS % width;
+    var value = next()!!;
+    while value >= limit { value = next()!!; }
+    return low + value % width;
+}
+
+fn range_bound(value) {
+    value!!;
+    when value is int { value } else { Error::TypeMismatch("random::range") }
+}
+
+public fn boolean() {
+    return next()!! >= MODULUS / 2;
+}

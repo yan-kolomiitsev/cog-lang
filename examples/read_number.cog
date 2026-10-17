@@ -1,0 +1,9 @@
+include std;
+use io;
+use str;
+
+fn main() -> nil {
+    io::print("Enter a number: ")!!;
+    const number = (str::trim(io::read_line()) as int)!!;
+    io::println($"Number: {number}")!!;
+}

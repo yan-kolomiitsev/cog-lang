@@ -1,0 +1,2 @@
+target "client" entry="client.cog"
+target "server" entry="server.cog"

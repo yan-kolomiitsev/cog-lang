@@ -1,0 +1,32 @@
+include std;
+use io;
+
+fn risky() -> int {
+    1 / 0
+}
+
+fn work() -> int {
+    defer { io::println("remaining cleanup"); }
+    defer {
+        io::println("failing cleanup");
+        const secondary = "bad" as int;
+    }
+
+    try {
+        risky()!!;
+    } catch(error) {
+        crash("local catch must not intercept !!");
+    }
+
+    7
+}
+
+fn main() -> nil {
+    try {
+        io::println(200 + work());
+    } catch(error) {
+        io::println(error.error_kind());
+    }
+
+    io::println(3 + 4);
+}

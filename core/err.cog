@@ -1,0 +1,24 @@
+// Recoverable runtime errors are ordinary enum patterns and values.
+// VM corruption and explicit crash are deliberately absent from this enum.
+public enum Error {
+    TypeMismatch(op: str),
+    DivisionByZero,
+    Overflow,
+    NegativeSleep(seconds: float),
+    ParseFailure(from: str, to: str),
+    IndexOutOfBounds(index: int, len: int),
+    MissingField(field: str),
+    MissingKey,
+    Unordered,
+    PermissionDenied(op: str),
+    ProcessFailed(command: str, code: int?),
+    IoReadFailed,
+    IoWriteFailed(message: str),
+    EntropyUnavailable,
+    InvalidRangeStep,
+    InvalidResource,
+    InvalidArgument(op: str),
+    NativeFailure(message: str),
+    ResourceLimit(resource: str),
+    IoFailure(op: str, message: str),
+}

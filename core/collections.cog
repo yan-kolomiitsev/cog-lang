@@ -1,0 +1,251 @@
+// Insertion-ordered hash map with tombstones for amortized constant-time removal.
+use err::Error;
+use clone::Clone;
+use hash;
+
+public trait Hashable {
+    fn hash_code(self) -> int;
+    fn equals(self, other: Self) -> bool;
+}
+
+extend int with Hashable {
+    fn hash_code(self) -> int { hash::of(self)!! }
+    fn equals(self, other: int) -> bool { self == other }
+}
+
+extend str with Hashable {
+    fn hash_code(self) -> int { hash::of(self)!! }
+    fn equals(self, other: str) -> bool { self == other }
+}
+
+extend bool with Hashable {
+    fn hash_code(self) -> int { hash::of(self)!! }
+    fn equals(self, other: bool) -> bool { self == other }
+}
+
+struct Slot[K: type, V: type] {
+    key: K,
+    value: V,
+    hash: int,
+    next: int,
+    live: bool
+}
+
+public struct Map[K: type + Hashable, V: type] {
+    private slots: Slot[K, V][] = [],
+    private buckets: int[] = [-1, -1, -1, -1, -1, -1, -1, -1],
+    private length: int = 0,
+    private deleted: int = 0
+}
+
+fn bucket_index(hash_code: int, capacity: int) -> int {
+    var index = hash_code % capacity;
+    if index < 0 { index += capacity; }
+    index
+}
+
+fn empty_buckets(capacity: int) -> int[] {
+    var buckets: int[] = [];
+    for _ in 0..capacity { buckets << -1; }
+    buckets
+}
+
+fn find_slot[K: type + Hashable, V: type](items: Map[K, V], key: K, hash_code: int) -> int {
+    if items.buckets.len() == 0 { return -1; }
+    var index = items.buckets[bucket_index(hash_code, items.buckets.len())]!!;
+    while index >= 0 {
+        const slot = items.slots[index]!!;
+        if slot.live && slot.hash == hash_code && key.equals(slot.key)!! {
+            return index;
+        }
+        index = slot.next;
+    }
+    -1
+}
+
+fn rebuild[K: type + Hashable, V: type](items: Map[K, V], capacity: int) {
+    var buckets = empty_buckets(capacity);
+    var slots: Slot[K, V][] = [];
+    for old in items.slots {
+        if old.live {
+            const bucket = bucket_index(old.hash, capacity);
+            slots << Slot(
+                key: old.key,
+                value: old.value,
+                hash: old.hash,
+                next: buckets[bucket]!!,
+                live: true
+            );
+            buckets[bucket] = slots.len() - 1;
+        }
+    }
+    items.slots = slots;
+    items.buckets = buckets;
+    items.deleted = 0;
+}
+
+public fn map_new[K: type + Hashable, V: type]() -> Map[K, V] {
+    Map[K, V]()
+}
+
+extend[K: type + Hashable, V: type] Map[K, V] {
+    public fn len(self) -> int { self.length }
+
+    public fn capacity(self) -> int { self.buckets.len() }
+
+    public fn is_empty(self) -> bool { self.length == 0 }
+
+    public fn contains(self, key: K) -> bool {
+        find_slot(self, key, key.hash_code()!!) >= 0
+    }
+
+    // Replacing a value keeps its insertion position. Returns true only on insertion.
+    public fn set(mut self, key: K, value: V) -> bool {
+        const hash_code = key.hash_code()!!;
+        const existing = find_slot(self, key, hash_code);
+        if existing >= 0 {
+            const slot = self.slots[existing]!!;
+            self.slots[existing] = Slot(
+                key: key,
+                value: value,
+                hash: hash_code,
+                next: slot.next,
+                live: true
+            );
+            return false;
+        }
+
+        if self.length + 1 > self.buckets.len() - self.buckets.len() / 4 {
+            var next_capacity = self.buckets.len() * 2;
+            if next_capacity == 0 { next_capacity = 8; }
+            rebuild(self, next_capacity);
+        } else if self.deleted > self.slots.len() / 2 {
+            rebuild(self, self.buckets.len());
+        }
+
+        const bucket = bucket_index(hash_code, self.buckets.len());
+        self.slots << Slot(
+            key: key,
+            value: value,
+            hash: hash_code,
+            next: self.buckets[bucket]!!,
+            live: true
+        );
+        self.buckets[bucket] = self.slots.len() - 1;
+        self.length += 1;
+        true
+    }
+
+    // Missing keys return Error::MissingKey. Use contains to distinguish a
+    // missing key from a key whose stored value is nil.
+    public fn get(self, key: K) -> V {
+        const index = find_slot(self, key, key.hash_code()!!);
+        if index < 0 { return Error::MissingKey(); }
+        self.slots[index]!!.value
+    }
+
+    public fn get_or(self, key: K, default: V) -> V {
+        const index = find_slot(self, key, key.hash_code()!!);
+        if index < 0 { return default; }
+        self.slots[index]!!.value
+    }
+
+    // Unlinks in expected O(1), then compacts once tombstones exceed half the slots.
+    public fn remove(mut self, key: K) -> V {
+        const hash_code = key.hash_code()!!;
+        const bucket = bucket_index(hash_code, self.buckets.len());
+        var previous = -1;
+        var index = self.buckets[bucket]!!;
+        while index >= 0 {
+            const slot = self.slots[index]!!;
+            if slot.hash == hash_code && key.equals(slot.key)!! {
+                if previous < 0 {
+                    self.buckets[bucket] = slot.next;
+                } else {
+                    const before = self.slots[previous]!!;
+                    self.slots[previous] = Slot(
+                        key: before.key,
+                        value: before.value,
+                        hash: before.hash,
+                        next: slot.next,
+                        live: true
+                    );
+                }
+                self.slots[index] = Slot(
+                    key: slot.key,
+                    value: slot.value,
+                    hash: slot.hash,
+                    next: -1,
+                    live: false
+                );
+                self.length -= 1;
+                self.deleted += 1;
+                const removed = slot.value;
+                if self.deleted > self.slots.len() / 2 {
+                    rebuild(self, self.buckets.len());
+                }
+                return removed;
+            }
+            previous = index;
+            index = slot.next;
+        }
+        Error::MissingKey()
+    }
+
+    public fn clear(mut self) {
+        self.slots = [];
+        self.buckets = empty_buckets(self.buckets.len());
+        self.length = 0;
+        self.deleted = 0;
+    }
+
+    public fn entries(self) -> (K, V)[] {
+        var result: (K, V)[] = [];
+        for slot in self.slots {
+            if slot.live { result << (slot.key, slot.value); }
+        }
+        result
+    }
+
+    public fn keys(self) -> K[] {
+        var result: K[] = [];
+        for slot in self.slots {
+            if slot.live { result << slot.key; }
+        }
+        result
+    }
+
+    public fn values(self) -> V[] {
+        var result: V[] = [];
+        for slot in self.slots {
+            if slot.live { result << slot.value; }
+        }
+        result
+    }
+}
+
+extend[K: type + Hashable + Clone, V: type + Clone] Map[K, V] with Clone {
+    fn clone(self) -> Self {
+        var copied = Map[K, V]();
+        for slot in self.slots {
+            if slot.live {
+                if copied.length + 1 > copied.buckets.len() - copied.buckets.len() / 4 {
+                    var next_capacity = copied.buckets.len() * 2;
+                    if next_capacity == 0 { next_capacity = 8; }
+                    rebuild(copied, next_capacity);
+                }
+                const bucket = bucket_index(slot.hash, copied.buckets.len());
+                copied.slots << Slot(
+                    key: slot.key.clone(),
+                    value: slot.value.clone(),
+                    hash: slot.hash,
+                    next: copied.buckets[bucket]!!,
+                    live: true
+                );
+                copied.buckets[bucket] = copied.slots.len() - 1;
+                copied.length += 1;
+            }
+        }
+        copied
+    }
+}

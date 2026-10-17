@@ -1,0 +1,12 @@
+include game;
+include std;
+
+use io;
+use random from game as game_random;
+use random from std as std_random;
+use numbers from game as game_numbers;
+
+fn main() {
+    io::println(game_random::label());
+    io::println(game_numbers::twice(3));
+}

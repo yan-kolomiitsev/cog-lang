@@ -1,0 +1,174 @@
+use err::Error;
+
+public const PI: float = 3.141592653589793;
+public const E: float = 2.718281828459045;
+public const TAU: float = 6.283185307179586;
+public const SQRT_2: float = 1.4142135623730951;
+public const SQRT_3: float = 1.7320508075688772;
+public const LN_2: float = 0.6931471805599453;
+public const LN_10: float = 2.302585092994046;
+public const LOG2_E: float = 1.4426950408889634;
+public const LOG10_E: float = 0.4342944819032518;
+public const DEG_TO_RAD: float = 0.017453292519943295;
+public const RAD_TO_DEG: float = 57.29577951308232;
+
+fn number(value, operation: str) {
+    value!!;
+    match value {
+        int => value,
+        float => value,
+        _ => Error::TypeMismatch(operation),
+    }
+}
+
+public fn abs(x) {
+    const value = number(x, "math::abs")!!;
+    if value < 0 {
+        return 0 - value;
+    }
+    return value;
+}
+
+public fn min(a, b) {
+    const left = number(a, "math::min")!!;
+    const right = number(b, "math::min")!!;
+    if left < right {
+        return left;
+    }
+    return right;
+}
+
+public fn max(a, b) {
+    const left = number(a, "math::max")!!;
+    const right = number(b, "math::max")!!;
+    if left > right {
+        return left;
+    }
+    return right;
+}
+
+// Conversion truncates toward zero; negative fractions need an adjustment.
+public fn floor(x) {
+    const value = number(x, "math::floor")!!;
+    const truncated = (value as int)!!;
+    if truncated > value {
+        return truncated - 1;
+    }
+    return truncated;
+}
+
+public fn ceil(x) {
+    const value = number(x, "math::ceil")!!;
+    const truncated = (value as int)!!;
+    if truncated < value {
+        return truncated + 1;
+    }
+    return truncated;
+}
+
+public fn round(x) {
+    const value = number(x, "math::round")!!;
+    when value is int { return value; }
+    const lower = floor(value)!!;
+    if value - lower >= 0.5 { return lower + 1; }
+    return lower;
+}
+
+// Exponentiation by squaring; the exponent is a nonnegative integer.
+public fn pow(base, exponent) {
+    const value = number(base, "math::pow")!!;
+    exponent!!;
+    when exponent is int {} else { return Error::TypeMismatch("math::pow"); }
+    if exponent < 0 {
+        return Error::InvalidArgument("math::pow");
+    }
+    var result = when value is float { 1.0 } else { 1 };
+    var power = value;
+    var remaining = exponent;
+    while remaining > 0 {
+        if remaining % 2 == 1 { result = (result * power)!!; }
+        remaining = remaining / 2;
+        if remaining > 0 { power = (power * power)!!; }
+    }
+    return result;
+}
+
+// Scale by powers of four before Newton iteration to cover the binary64 range.
+public fn sqrt(x) {
+    const value = number(x, "math::sqrt")!!;
+    if value < 0 {
+        return Error::InvalidArgument("math::sqrt");
+    }
+    if value == 0 {
+        return 0.0;
+    }
+    const input = (value as float)!!;
+    if input != input { return input; }
+    if input / input != 1.0 { return input; }
+
+    var scaled = input;
+    var scale = 1.0;
+    while scaled >= 4.0 {
+        scaled = scaled / 4.0;
+        scale = scale * 2.0;
+    }
+    while scaled < 1.0 {
+        scaled = scaled * 4.0;
+        scale = scale / 2.0;
+    }
+    var guess = (scaled + 1.0) / 2.0;
+    var i = 0;
+    while i < 8 {
+        guess = (guess + scaled / guess) / 2.0;
+        i = i + 1;
+    }
+    return guess * scale;
+}
+
+public fn ln(x) {
+    const value = number(x, "math::ln")!!;
+    if value <= 0 {
+        return Error::InvalidArgument("math::ln");
+    }
+    const input = (value as float)!!;
+    if input != input { return input; }
+    if input / input != 1.0 { return input; }
+
+    var m = input;
+    var k = 0;
+    while m >= 2.0 {
+        m = m / 2.0;
+        k = k + 1;
+    }
+    while m < 1.0 {
+        m = m * 2.0;
+        k = k - 1;
+    }
+
+    const y = (m - 1.0) / (m + 1.0);
+    const y2 = y * y;
+
+    var sum = 0.0;
+    var term = y;
+    var denom = 1.0;
+    var i = 0;
+
+    while i < 24 {
+        sum = sum + (term / denom);
+        term = term * y2;
+        denom = denom + 2.0;
+        i = i + 1;
+    }
+
+    sum = sum * 2.0;
+
+    return sum + (k * LN_2);
+}
+
+public fn log2(x) {
+    return ln(x)!! * LOG2_E;
+}
+
+public fn log10(x) {
+    return ln(x)!! * LOG10_E;
+}

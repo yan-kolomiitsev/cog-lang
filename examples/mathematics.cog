@@ -1,0 +1,21 @@
+include std;
+use io;
+use math;
+use err::Error;
+
+fn main() -> nil {
+    io::println(math::pow(2, 10)!!)!!;
+    io::println(math::sqrt(9)!!)!!;
+    io::println(math::floor(-3.5)!!)!!;
+    io::println(math::round(-1.5)!!)!!;
+
+    try {
+        math::ln(0);
+    } catch(error) {
+        when error is Error::InvalidArgument(operation) {
+            io::println($"Invalid argument: {operation}")!!;
+        } else {
+            error!!;
+        }
+    }
+}

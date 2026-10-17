@@ -1,0 +1,5 @@
+COGLOCK 1
+root 0
+pkg 0 "package-inclusion-demo" "0.1.0" path "."
+pkg 1 "game" "0.0.0" path "src/game"
+dep 0 "game" 1

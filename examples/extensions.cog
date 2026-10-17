@@ -1,0 +1,31 @@
+include std;
+use io;
+
+struct Point {
+    x: int,
+    y: int,
+}
+
+comptime Scalar: type = int;
+
+extend Point {
+    fn shifted(self, amount: int) -> Point {
+        Point(self.x + amount, self.y + amount)
+    }
+
+    fn describe(self) -> str {
+        $"Point({self.x}, {self.y})"
+    }
+}
+
+comptime extend Scalar {
+    fn describe(self) -> str {
+        $"integer {self}"
+    }
+}
+
+fn main() {
+    const point = Point(2, 3).shifted(5);
+    io::println(point.describe());
+    io::println(42.describe());
+}

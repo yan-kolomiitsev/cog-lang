@@ -1,0 +1,121 @@
+include std;
+// Number detective: guess a number from 1 to 100.
+// Commands: stats for statistics, quit to leave the game.
+use io;
+use str;
+use random;
+use err::Error;
+
+enum Command {
+    Guess(value: int,),
+    Stats,
+    Quit,
+    Invalid(reason: str,),
+}
+
+fn read_line(prompt: str) -> str {
+    io::print(prompt)!!;
+    str::trim(io::read_line()!!)
+}
+
+// An empty name becomes nil; ?? selects the default for this nullable value.
+fn optional_name(text: str) -> str? {
+    if text == "" { nil } else { text }
+}
+
+fn announce(text: str, prefix: str = "→",) -> nil {
+    io::println($"{prefix} {text}")!!;
+}
+
+fn parse_command(text: str) {
+    if text == "stats" { return Command::Stats(); }
+    if text == "quit" { return Command::Quit(); }
+
+    // A failed cast produces Error. Lexical try observes it before constructing Guess.
+    try {
+        const value = text as int;
+        if value < 1 || value > 100 {
+            Command::Invalid(reason: "Enter a number from 1 to 100.",)
+        } else {
+            Command::Guess(value: value,)
+        }
+    } catch(error) {
+        when error is Error::ParseFailure {
+            Command::Invalid(reason: "Enter an integer, stats or quit.",)
+        } else {
+            error!!
+        }
+    }
+}
+
+fn show_stats(history) -> nil {
+    var total = 0;
+    var index = 0;
+    while index < len(history) {
+        // This unannotated parameter is dynamic, so cast reads at this boundary.
+        total += history[index] as int;
+        index += 1;
+    }
+
+    // Before the first guess, division produces Error; ?! lazily selects fallback text.
+    const average = ((total as float / len(history)) as str) ?! "no guesses";
+    io::println($"History: {history}; average: {average}")!!;
+}
+
+fn play(secret: int, player: str, limit: int = 6,) -> nil {
+    var history: int[] = [];
+    // A read-only alias observes mutations made through the mutable history binding.
+    const view = history;
+    var attempts = 0;
+
+    announce($"{player}, the safe has picked a number. You have {limit} attempts.")!!;
+    while attempts < limit {
+        const command = parse_command(read_line("Number / stats / quit: ")!!)!!;
+
+        // when handles one interesting pattern; mutation requires var.
+        when command is Command::Guess(value) {
+            history.append(value,);
+            attempts += 1;
+        }
+
+        // match handles multiple alternatives, destructuring and guards.
+        match command {
+            Command::Guess(value) if value == secret => {
+                announce($"You win, {player}! Number: {secret}; guesses: {attempts}.", prefix: "✓",)!!;
+                show_stats(view)!!;
+                return;
+            },
+            Command::Guess(value) if value < secret => {
+                announce("The secret number is higher.")!!;
+            },
+            Command::Guess(value) => {
+                announce("The secret number is lower.")!!;
+            },
+            Command::Stats => { show_stats(view)!!; },
+            Command::Invalid(reason) => { announce(reason, prefix: "!",)!!; },
+            Command::Quit => {
+                announce($"The secret was {secret}. See you!")!!;
+                return;
+            },
+            _ => { crash("Unknown command."); },
+        };
+    }
+
+    announce($"Out of guesses. Secret: {secret}.")!!;
+    show_stats(view)!!;
+}
+
+fn main() -> nil {
+    // Runs on normal return and on Error propagation through !!.
+    defer { io::println("Game over."); }
+
+    io::println("=== Number detective ===")!!;
+    const player = optional_name(read_line("Your name [Player]: ")!!) ?? "Player";
+    const limit = (read_line("Attempts, 1-100 [6]: ")!! as int) ?! 6;
+    if limit < 1 || limit > 100 {
+        crash("The number of attempts must be between 1 and 100.");
+    }
+
+    const secret = (random::range(1, 101) as int)!!;
+    play(secret, player: player, limit: limit,)!!;
+}

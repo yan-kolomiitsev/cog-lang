@@ -1,0 +1,27 @@
+include std;
+use io;
+
+struct Pair {
+    first: int,
+    second: int,
+}
+
+struct Settings {
+    pair: Pair,
+    retries: int = 3,
+}
+
+comptime fn make_pair(first: int, second: int) -> Pair {
+    return Pair(first * 2, second + 1);
+}
+
+comptime fn make_settings(value: int) -> Settings {
+    return Settings(make_pair(value, 10));
+}
+
+comptime SETTINGS = make_settings(5);
+
+fn main() -> nil {
+    io::println($"pair = ({SETTINGS.pair.first}, {SETTINGS.pair.second})")!!;
+    io::println($"retries = {SETTINGS.retries}")!!;
+}

@@ -1,0 +1,28 @@
+// Clone returns an independent value where the type supports it.
+public trait Clone {
+    fn clone(self) -> Self;
+}
+
+extend int with Clone {
+    fn clone(self) -> int { self }
+}
+
+extend float with Clone {
+    fn clone(self) -> float { self }
+}
+
+extend bool with Clone {
+    fn clone(self) -> bool { self }
+}
+
+extend nil with Clone {
+    fn clone(self) -> nil { nil }
+}
+
+extend str with Clone {
+    fn clone(self) -> str { self }
+}
+
+public fn value[T: type + Clone](item: T) -> T {
+    item.clone()
+}

@@ -1,0 +1,27 @@
+include std;
+use io;
+use str::{trim,};
+
+struct Point {
+    x: int,
+    y: int = 0,
+}
+
+enum Message {
+    Text(id: int, value: str,),
+    Empty,
+}
+
+fn describe(name: str, count: int = 1, enabled: bool = true,) -> str {
+    $"{name}: count={count}, enabled={enabled}"
+}
+
+fn main() -> nil {
+    io::println(describe("Cog", enabled: false, count: 3,))!!;
+    const point = Point(1, y: 2,);
+    io::println($"Point({point.x}, {point.y})")!!;
+    const message = Message::Text(value: trim(" hello ",), id: 7,);
+    when message is Message::Text(id, text,) {
+        io::println($"message {id}: {text}")!!;
+    }
+}

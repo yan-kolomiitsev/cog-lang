@@ -1,0 +1,17 @@
+include std;
+use io;
+use bytes;
+use base64;
+
+fn main() -> nil {
+    const encoded = base64::encode(bytes::from_str("Cog")!!)!!;
+    const decoded = base64::decode(encoded)!!;
+    io::println(encoded)!!;
+    io::println(bytes::to_str(decoded, 0, bytes::len(decoded)!!)!!)!!;
+
+    try {
+        base64::decode("AB==");
+    } catch(error) {
+        io::println(error.error_kind())!!;
+    }
+}

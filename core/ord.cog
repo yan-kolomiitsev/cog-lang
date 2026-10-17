@@ -1,0 +1,38 @@
+// Ordering operations for generic sorting, selection, and search.
+use str;
+use err::Error;
+
+public trait Ord {
+    fn compare(self, other: Self) -> int;
+}
+
+extend int with Ord {
+    fn compare(self, other: int) -> int {
+        if self < other { return -1; }
+        if self > other { return 1; }
+        0
+    }
+}
+
+extend bool with Ord {
+    fn compare(self, other: bool) -> int {
+        if self == other { return 0; }
+        if !self { return -1; }
+        1
+    }
+}
+
+extend float with Ord {
+    fn compare(self, other: float) -> int {
+        if self != self || other != other { return Error::Unordered(); }
+        if self < other { return -1; }
+        if self > other { return 1; }
+        0
+    }
+}
+
+extend str with Ord {
+    fn compare(self, other: str) -> int {
+        str::compare(self, other)!!
+    }
+}

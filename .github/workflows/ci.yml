@@ -1,0 +1,125 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      fuzz_parallelism:
+        description: 'Authorize fuzz smoke: off, or simultaneous single-worker targets'
+        type: choice
+        default: 'off'
+        options: ['off', '1', '2', '3', '4']
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - { runner: ubuntu-latest, host: x86_64-unknown-linux-gnu }
+          - { runner: windows-latest, host: x86_64-pc-windows-msvc }
+          - { runner: macos-15, host: aarch64-apple-darwin }
+        rust: ['1.95', stable]
+    runs-on: ${{ matrix.platform.runner }}
+    timeout-minutes: 40
+    env:
+      RUSTUP_TOOLCHAIN: ${{ matrix.rust }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure the native C compiler on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $installation = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $installation) { throw 'MSVC installation not found' }
+          $vcvars = Join-Path $installation 'VC\Auxiliary\Build\vcvars64.bat'
+          $environment = & cmd.exe /d /c "call `"$vcvars`" >nul && set"
+          if ($LASTEXITCODE -ne 0) { throw 'MSVC environment initialization failed' }
+          foreach ($line in $environment) {
+            if ($line -match '^(PATH|INCLUDE|LIB|LIBPATH)=(.*)$') {
+              "$($Matches[1].ToUpperInvariant())=$($Matches[2])" | Add-Content -Path $env:GITHUB_ENV -Encoding utf8
+            }
+          }
+      - run: rustup toolchain install "${{ matrix.rust }}" --profile minimal --component rustfmt --component clippy
+      - name: Record and require the requested platform
+        run: |
+          mkdir -p target/ci-evidence
+          rustc -vV | tee target/ci-evidence/rustc.log
+          cargo -V | tee target/ci-evidence/cargo.log
+          uname -a | tee target/ci-evidence/os.log
+          test "$(rustc -vV | sed -n 's/^host: //p')" = '${{ matrix.platform.host }}'
+      - run: cargo build --locked 2>&1 | tee target/ci-evidence/build.log
+      - run: cargo test --locked 2>&1 | tee target/ci-evidence/test.log
+      - run: cargo run --locked --example embedding 2>&1 | tee target/ci-evidence/embedding.log
+      - run: cargo clippy --locked --all-targets -- -D warnings 2>&1 | tee target/ci-evidence/clippy.log
+      - run: cargo fmt --all -- --check 2>&1 | tee target/ci-evidence/format.log
+      - run: cargo package --locked 2>&1 | tee target/ci-evidence/package.log
+      - name: Verify packaged SDK and verifier fixtures
+        run: cargo test --locked --manifest-path target/package/cog-0.1.0/Cargo.toml --target-dir target --test sdk --test sdk_plugins --test bytecode_security 2>&1 | tee target/ci-evidence/package-tests.log
+      - run: cargo install --path target/package/cog-0.1.0 --locked --bin cog --root target/install 2>&1 | tee target/ci-evidence/install.log
+      - run: |
+          cli=target/install/bin/cog
+          if [[ "$RUNNER_OS" == Windows ]]; then cli+=.exe; fi
+          "$cli" check examples/hello.cog 2>&1 | tee target/ci-evidence/installed-cli.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rust-${{ matrix.platform.host }}-${{ matrix.rust }}
+          path: target/ci-evidence/
+  tutorial:
+    runs-on: ubuntu-latest
+    env:
+      RUSTUP_TOOLCHAIN: stable
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install stable --profile minimal
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: cargo fetch --locked
+      - run: node --test web/server.test.mts
+  fuzz-smoke:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fuzz_parallelism != 'off' && inputs.fuzz_parallelism != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      max-parallel: ${{ fromJSON(inputs.fuzz_parallelism != 'off' && inputs.fuzz_parallelism || '1') }}
+      matrix:
+        target: [frontend, kdl, decoder, verifier]
+    env:
+      RUSTUP_TOOLCHAIN: nightly
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install nightly --profile minimal
+      - run: cargo install cargo-fuzz --version 0.13.2 --locked
+      - run: mkdir -p fuzz/corpus/frontend fuzz/corpus/kdl fuzz/corpus/decoder fuzz/corpus/verifier
+      - run: cp examples/*.cog fuzz/corpus/frontend/
+      - run: cp fuzz/seeds/kdl/*.kdl fuzz/corpus/kdl/
+      - run: cp fuzz/seeds/verifier/* fuzz/corpus/verifier/
+      - run: cargo run --locked --bin cog -- build examples/hello.cog -o fuzz/corpus/decoder/hello.cogb
+      - run: |
+          set -o pipefail
+          case '${{ matrix.target }}' in
+            kdl) fuzz_max_len=262145 ;;
+            verifier) fuzz_max_len=36864 ;;
+            *) fuzz_max_len=65536 ;;
+          esac
+          timeout 600s cargo fuzz run ${{ matrix.target }} -- -max_total_time=30 -max_len="$fuzz_max_len" -rss_limit_mb=1024 -timeout=5 -seed=1 -print_final_stats=1 2>&1 | tee target/fuzz-smoke.log
+          if grep -Eq 'ERROR:|SUMMARY:.*Sanitizer' target/fuzz-smoke.log; then exit 1; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fuzz-${{ matrix.target }}
+          path: |
+            target/fuzz-smoke.log
+            fuzz/corpus/
+            fuzz/artifacts/

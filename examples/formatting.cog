@@ -1,0 +1,16 @@
+#!/usr/bin/env cog
+include std;
+use io;
+use str;
+use fmt;
+
+fn main() -> nil {
+    var output = str::builder();
+    var alias = output;
+    fmt::write(output, "value={}; ", "42" as int)!!;
+    const snapshot = str::build(output)!!;
+    fmt::write(alias, "fraction={}", ("3.5").to_float())!!;
+    const text = str::build(output)!!;
+    io::println(text)!!;
+    io::println(snapshot)!!;
+}

@@ -1,0 +1,6 @@
+plugin version=1 library="./unused.so"
+function "host::example" result="nil" {
+    param "array"
+    effect "output"
+    mutates 0
+}

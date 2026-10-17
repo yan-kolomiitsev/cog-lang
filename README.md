@@ -1,0 +1,114 @@
+# Cog
+
+Cog is an experimental programming language implemented in Rust, with a compiler,
+portable bytecode, and a stack-based virtual machine. It aims to combine a small,
+expression-oriented language with explicit mutation and practical error handling.
+
+The compiler and interpreter work today. Cog is being prepared for its first
+public release; the language, standard library, and bytecode format may still
+change. Compile-time bindings and functions evaluate scalar expressions and
+construct structs; type-valued bindings, source-package inclusion, and basic
+statically dispatched extensions are also available. Runtime generic functions
+take inferred `[T: type]` parameters that are erased before runtime; trait
+bounds and parameterized trait contracts are checked during specialization. Generic
+structs and receiver methods are supported; source closures and JIT compilation
+remain planned.
+
+```cog
+include std;
+use io;
+
+fn greet(name: str, punctuation: str = "!") -> str {
+    $"Hello, {name}{punctuation}"
+}
+
+fn main() -> nil {
+    io::println(greet("Cog", punctuation: "!"))!!;
+}
+```
+
+
+Save this as `hello.cog`, then run `cog run hello.cog`.
+
+## Build and install
+
+You need Rust 1.95 or newer and Cargo. From this directory:
+
+```sh
+cargo build --locked
+cargo install --path . --locked --bin cog
+cog run examples/hello.cog
+```
+
+Ensure Cargo's bin directory is on your `PATH`. With dependencies already cached,
+add `--offline` to Cargo commands. Installation is optional: use
+`cargo run --locked --bin cog -- run examples/hello.cog` directly from the checkout.
+
+## Check, build, and run
+
+```sh
+cog check examples/hello.cog
+cog build examples/hello.cog -o target/hello.cogb
+cog run target/hello.cogb
+cog --version
+
+cog init my-app
+cog run my-app
+```
+
+`check` analyzes source without writing artifacts. `run` builds or reuses validated
+bytecode and executes it. A saved `.cogb` runs without source files or recompilation.
+Project builds default to `target/<package-name>.cogb`; a standalone source defaults
+to a `.cogb` beside it. Build status and diagnostics go to stderr; program output
+goes to stdout.
+
+## Language highlights
+
+- `const` prevents reassignment and mutation through that access path. `var`
+  requires reachable mutation; it does not imply dynamic typing. Reference-like
+  assignment shares an object without an implicit move.
+- A block's last expression without `;` is its result; no tail means `nil`.
+  Functions may declare a normal result type with `-> T`.
+- Errors are separate from normal types and from `nil`. Lexical `try/catch`
+  handles failures; `!!` propagates an Error from the current function through
+  cleanup. Lazy `??` selects a fallback for nil, and `?!` for Error.
+- Plain strings preserve braces. `$"...{expression}..."` explicitly interpolates
+  expressions. `when` and `match` inspect types and enum payloads.
+- Calls support defaults and positional arguments before named arguments.
+  Constructors use the same call syntax. Modules use explicit imports and
+  `public` visibility; local dependencies use KDL manifests and `cog.lock`, with
+  compile-time package inclusion and package-qualified imports.
+
+Arrays are homogeneous and carry a recursive element-type invariant such as
+`int[]` or `str[][]`. Known mismatches are rejected during compilation; mutations
+through dynamic code are checked at runtime. Fixed-shape tuples and user-declared
+extension methods are also supported. Trait implementations and bounded generic
+functions use static dispatch. Arrays and tuples support structural `.clone()` for
+supported primitive and nested container types. Generic structs support inferred
+compile-time type parameters and applied type annotations. Nullable and Error flow
+facts refine supported branches and are conservatively invalidated by writes and
+calls.
+
+## Learn more
+
+- [Documentation index](docs/README.md) and [language reference](docs/LANGUAGE.md)
+- [Getting started](web/get_started.html), an interactive local tutorial; start it
+  with `node web/server.mts` (Node.js 24.12+)
+- [Examples](examples/README.md), from hello world to an interactive guessing game
+- [Roadmap](ROADMAP.md), current progress and future direction
+- [Contributing](docs/CONTRIBUTING.md), source layout and validation commands
+
+## License
+
+This project is dual-licensed under either:
+
+- Mozilla Public License 2.0 (MPL-2.0)
+- Apache License, Version 2.0 (Apache-2.0)
+
+at your option.
+
+You may choose the license that best suits your needs.
+
+Contributions are accepted under both licenses.
+
+Full texts: [MPL-2.0](LICENSE-MPL-2.0) and [Apache-2.0](LICENSE-APACHE-2.0).

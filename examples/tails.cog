@@ -1,0 +1,27 @@
+include std;
+use io;
+
+fn square(value: int) -> int {
+    value * value
+}
+
+fn snapshot() -> int {
+    var value = 1;
+    defer { value = 2; }
+    value
+}
+
+fn positive(value: int) -> int {
+    when value is int if value > 0 { value } else { 0 }
+}
+
+fn recover() -> int {
+    try { 1 / 0 } catch(error) { 7 }
+}
+
+fn main() -> nil {
+    io::println(square(7))!!;
+    io::println(snapshot())!!;
+    io::println(positive(-3))!!;
+    io::println(recover())!!;
+}

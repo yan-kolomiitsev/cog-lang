@@ -1,0 +1,7 @@
+// Optional local source dependencies: alias path="directory".
+// Paths are relative to this file; each dependency needs its own package.kdl.
+// Create the dependency directory before uncommenting a declaration:
+// geometry path="./packages/geometry"
+
+// The alias selects a package for source imports: use module from geometry;
+// A successful cog build/run writes cog.lock; cog check does not write it.

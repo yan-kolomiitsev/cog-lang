@@ -1,0 +1,38 @@
+include std;
+use io;
+use err::Error;
+
+var fallback_calls = 0;
+
+fn default_value() -> int {
+    fallback_calls += 1;
+    9
+}
+
+fn optional(value: int?) -> int {
+    value ?? default_value()
+}
+
+fn recover(value: int?) -> int? {
+    value ?! default_value()
+}
+
+fn main() -> nil {
+    io::println(optional(7));
+    io::println(optional(nil));
+    io::println(recover(nil));
+
+    const failed: int? = 1 / 0;
+    io::println(recover(failed));
+    const preserved = failed ?? 0;
+    when preserved is Error::DivisionByZero {
+        io::println("preserved");
+    } else { crash("nil fallback recovered Error"); }
+
+    io::println(fallback_calls);
+    try {
+        (1 / 0) ?! ("bad" as int);
+    } catch(error) {
+        io::println(error.error_kind());
+    }
+}

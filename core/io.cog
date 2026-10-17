@@ -1,0 +1,28 @@
+// Text rendering and output policy live in the standard library. Runtime I/O
+// writes bytes to any stream; print flushes so failures reach the caller.
+use bytes;
+
+const NEWLINE = bytes::from_str("\n");
+
+fn output(stream, data) -> nil {
+    io::write_all(stream, data, 0, bytes::len(data))!!
+}
+
+// Encode UTF-8 text and write all bytes without flushing the stream.
+public fn write_text(stream, text: str) -> nil {
+    const data = bytes::from_str(text)!!;
+    io::write_all(stream, data, 0, bytes::len(data))!!
+}
+
+public fn print(value) {
+    const stream = io::stdout()!!;
+    output(stream, bytes::render(value)!!)!!;
+    io::flush(stream)
+}
+
+public fn println(value) {
+    const stream = io::stdout()!!;
+    output(stream, bytes::render(value)!!)!!;
+    output(stream, NEWLINE)!!;
+    io::flush(stream)
+}

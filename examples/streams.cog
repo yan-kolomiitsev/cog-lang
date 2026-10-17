@@ -1,0 +1,11 @@
+include std;
+use io;
+use bytes;
+
+fn main() -> nil {
+    const data = bytes::from_str("Cog runtime: bytes and managed streams\n")!!;
+    const output = io::stdout()!!;
+    io::write_all(output, data, 0, bytes::len(data))!!;
+    io::flush(output)!!;
+    io::println("print/println are standard-library functions")!!;
+}

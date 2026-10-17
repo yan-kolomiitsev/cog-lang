@@ -1,0 +1,50 @@
+[package]
+name = "cog"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+default-run = "cog"
+description = "An experimental expression-oriented language with a compiler and stack VM"
+license = "MPL-2.0 OR Apache-2.0"
+readme = "README.md"
+exclude = [
+    "/dev_docs/**",
+    "/.claude/**",
+    "/.codex/**",
+    "/.agents/**",
+    "/.idea/**",
+    "/AGENTS.md",
+    "/CLAUDE.md",
+    "/graphify-out/**",
+    "/cogvm.zip",
+    "**/*.cogb",
+    "**/target/**",
+]
+
+[lib]
+name = "cog"
+path = "src/lib.rs"
+
+[[bin]]
+name = "cog"
+path = "src/main.rs"
+
+[[bench]]
+name = "bench_interpreter"
+harness = false
+
+[profile.release]
+debug = true
+
+[dependencies]
+blake3 = "1.8.7"
+logos = "0.16.1"
+kdl = { version = "6.7.1", default-features = false, features = ["span"] }
+getrandom = "0.3.4"
+cap-std = "4.0.3"
+serde = "1.0.229"
+serde_json = "1.0.151"
+libloading = "0.8.9"
+
+[dev-dependencies]
+criterion = "0.5"

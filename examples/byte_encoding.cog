@@ -1,0 +1,20 @@
+include std;
+use io;
+use bytes;
+use ascii;
+use hex;
+
+fn main() -> nil {
+    var data = bytes::from_str("Cog")!!;
+    io::println(hex::encode(data)!!)!!;
+    bytes::set(data, 0, ascii::to_lowercase(bytes::get(data, 0)!!)!!)!!;
+    io::println(hex::encode(data, uppercase: true)!!)!!;
+
+    const decoded = hex::decode("48656c6c6f")!!;
+    io::println(bytes::to_str(decoded, 0, bytes::len(decoded)!!)!!)!!;
+    try {
+        hex::decode("not hexadecimal");
+    } catch(error) {
+        io::println(error.error_kind())!!;
+    }
+}

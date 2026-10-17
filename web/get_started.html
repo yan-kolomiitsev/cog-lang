@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Get started with Cog</title>
+<style>
+:root { color-scheme:light; --ink:#263a35; --muted:#536860; --line:#d6dfd9; --accent:#24634e; --paper:#f6f8f5; }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--paper); color:var(--ink); font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif; }
+a { color:var(--accent); text-underline-offset:3px; }
+button,textarea { font:inherit; }
+button { cursor:pointer; }
+button:disabled { cursor:default; opacity:.55; }
+[hidden] { display:none !important; }
+header { border-bottom:1px solid var(--line); background:white; padding:15px 24px; }
+header nav { max-width:1100px; margin:auto; display:flex; flex-wrap:wrap; gap:20px; align-items:center; }
+header strong { margin-right:auto; }
+.layout { max-width:1100px; margin:28px auto; padding:0 24px; display:grid; grid-template-columns:200px minmax(0,1fr); gap:32px; }
+aside { min-width:0; align-self:start; position:sticky; top:20px; }
+aside nav { display:grid; gap:4px; }
+aside a { padding:7px 10px; text-decoration:none; border-radius:7px; font-size:14px; }
+aside a:hover,aside a[aria-current="location"] { background:#e7efe9; }
+main { min-width:0; }
+h1 { font-size:30px; line-height:1.25; margin:0 0 12px; }
+h2 { font-size:22px; line-height:1.35; margin:0 0 12px; }
+h3 { font-size:14px; margin:14px 0 7px; }
+p { margin:0 0 15px; }
+.setup,.lesson,.next { background:white; border:1px solid var(--line); border-radius:12px; padding:23px; margin-bottom:22px; scroll-margin-top:20px; }
+.setup h2 { font-size:18px; }
+.setup p,.exercise { font-size:14px; color:var(--muted); }
+.setup pre { background:#edf3ee; padding:12px 15px; border-radius:7px; margin:12px 0; }
+#connection { padding:11px 14px; background:#edf3ee; border:1px solid var(--line); border-radius:8px; margin:18px 0; font-size:14px; }
+code,pre,textarea { font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace; }
+code { font-size:.9em; }
+pre { white-space:pre-wrap; overflow-wrap:anywhere; overflow:auto; font-size:14px; line-height:1.6; margin:0; }
+.editor-label { display:block; font-size:12px; font-weight:600; color:var(--muted); margin:13px 0 5px; }
+textarea { display:block; width:100%; border:1px solid #bdcec2; border-radius:8px; background:#f9fbf8; color:#1e352c; padding:14px; font-size:14px; line-height:1.65; resize:vertical; tab-size:4; }
+textarea:focus { outline:2px solid #69a68a; outline-offset:1px; }
+details { margin:12px 0; font-size:14px; }
+details label { display:block; color:var(--muted); font-size:12px; margin:7px 0; }
+.actions { display:flex; align-items:center; flex-wrap:wrap; gap:10px; margin:13px 0; }
+button { padding:7px 17px; border:1px solid var(--line); border-radius:7px; background:#f3f6f2; color:var(--ink); font-size:14px; }
+.run { background:var(--accent); color:white; border-color:var(--accent); }
+button:focus-visible,a:focus-visible,summary:focus-visible { outline:2px solid #458767; outline-offset:3px; }
+.run-status { font-size:13px; color:var(--muted); }
+.result pre { background:#f1f5f0; border-radius:7px; padding:12px 14px; min-height:42px; max-height:300px; }
+.diagnostic-group pre { background:#fff3ed; color:#80331e; }
+.exercise { margin:16px 0 0; }
+footer { color:var(--muted); font-size:13px; padding:5px 0 25px; }
+@media(max-width:760px) { .layout { grid-template-columns:1fr; margin:20px auto; gap:18px; padding:0 14px; } aside { position:static; } aside nav { display:flex; overflow:auto; gap:6px; padding-bottom:6px; } aside a { white-space:nowrap; background:#edf2ec; } .setup,.lesson,.next { padding:17px; } header { padding:13px 17px; } textarea { font-size:13px; } }
+</style></head>
+<body>
+<header><nav aria-label="Project"><strong>Cog tutorial</strong><a href="../README.md">Project</a><a href="../docs/LANGUAGE.md">Language reference</a><a href="../examples/README.md">Examples</a></nav></header>
+<div class="layout"><aside><nav aria-label="Lessons"><a href="#hello">1. A first program</a>
+<a href="#bindings">2. Constants and variables</a>
+<a href="#types">3. Types, nil, and conversion</a>
+<a href="#functions">4. Functions and block results</a>
+<a href="#control">5. Conditions and loops</a>
+<a href="#arrays">6. Arrays and shared values</a>
+<a href="#strings">7. Strings and input</a>
+<a href="#patterns">8. Structs, enums, and patterns</a>
+<a href="#errors">9. Errors and cleanup</a></nav></aside>
+<main><h1>Get started with Cog</h1><p>Work through these small programs to learn the basics. Edit an example and choose Run, or press Ctrl+Enter / Command+Enter in its editor.</p>
+<div class="setup"><h2>Run this tutorial locally</h2><p>Requires Rust 1.95 or newer, Cargo, and Node.js 24.12 or newer. From the Cog repository:</p><pre><code>node web/server.mts</code></pre><p>The server builds Cog and prints a local URL. Open that URL to run examples with the actual compiler and VM. No npm installation is needed. If Cargo dependencies are not cached, run <code>cargo build --locked --bin cog</code> first.</p><p>For a standalone program: save the source as <code>main.cog</code>, then run <code>cargo run --locked --bin cog -- run main.cog</code>.</p></div>
+<div id="connection" role="status" aria-live="polite">Start the local server to run examples. You can still read and edit them here.</div>
+<section id="hello" class="lesson"><h2>1. A first program</h2><p>Import io to print text. Execution starts in main. The postfix !! passes a successful result through and returns an Error if printing fails.</p>
+<label class="editor-label" for="code-hello">Cog example</label><textarea class="source" id="code-hello" rows="6" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off">include std;
+use io;
+
+fn main() -&gt; nil {
+    io::println(&quot;Hello, Cog!&quot;)!!;
+}
+</textarea>
+<div class="actions"><button class="run" type="button" disabled>Run</button><button class="reset" type="button">Reset</button><span class="run-status" role="status" aria-live="polite"></span></div>
+<div class="result" hidden><div class="output-group"><h3>Output</h3><pre class="output" tabindex="0"></pre></div><div class="diagnostic-group" hidden><h3>Diagnostics</h3><pre class="diagnostics" tabindex="0"></pre></div></div>
+<p class="exercise"><strong>Try it:</strong> Change the greeting and run it again.</p></section>
+<section id="bindings" class="lesson"><h2>2. Constants and variables</h2><p>Use const for a value you do not change through that binding. Use var when you reassign or mutate it. A local var needs a reachable mutation.</p>
+<label class="editor-label" for="code-bindings">Cog example</label><textarea class="source" id="code-bindings" rows="9" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off">include std;
+use io;
+
+fn main() -&gt; nil {
+    const name: str = &quot;Cog&quot;;
+    var count: int = 1;
+    count += 2;
+    io::println($&quot;{name}: {count}&quot;)!!;
+}
+</textarea>
+<div class="actions"><button class="run" type="button" disabled>Run</button><button class="reset" type="button">Reset</button><span class="run-status" role="status" aria-live="polite"></span></div>
+<div class="result" hidden><div class="output-group"><h3>Output</h3><pre class="output" tabindex="0"></pre></div><div class="diagnostic-group" hidden><h3>Diagnostics</h3><pre class="diagnostics" tabindex="0"></pre></div></div>
+<p class="exercise"><strong>Try it:</strong> Change the increment. Then change count to const and read the diagnostic.</p></section>
+<section id="types" class="lesson"><h2>3. Types, nil, and conversion</h2><p>The basic annotations are int, float, bool, str, and nil. A suffix ? allows nil as a normal value. Use as for explicit conversion; a failed conversion produces Error.</p>
+<label class="editor-label" for="code-types">Cog example</label><textarea class="source" id="code-types" rows="10" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off">include std;
+use io;
+
+fn main() -&gt; nil {
+    const text: str = &quot;42&quot;;
+    const number: int = text as int;
+    const optional: int? = nil;
+    const count: int = optional ?? 0;
+    io::println(number + count)!!;
+}
+</textarea>
+<div class="actions"><button class="run" type="button" disabled>Run</button><button class="reset" type="button">Reset</button><span class="run-status" role="status" aria-live="polite"></span></div>
+<div class="result" hidden><div class="output-group"><h3>Output</h3><pre class="output" tabindex="0"></pre></div><div class="diagnostic-group" hidden><h3>Diagnostics</h3><pre class="diagnostics" tabindex="0"></pre></div></div>
+<p class="exercise"><strong>Try it:</strong> Replace &quot;42&quot; with &quot;hello&quot;. Then restore it and try a different number.</p></section>
+<section id="functions" class="lesson"><h2>4. Functions and block results</h2><p>The last expression without a semicolon is the block result. A block without a tail returns nil. Functions can declare a result with -&gt; T. Arguments can have defaults; positional arguments go before named ones.</p>
+<label class="editor-label" for="code-functions">Cog example</label><textarea class="source" id="code-functions" rows="11" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off">include std;
+use io;
+
+fn describe(name: str, count: int = 1) -&gt; str {
+    $&quot;{name}: {count}&quot;
+}
+
+fn main() -&gt; nil {
+    io::println(describe(&quot;Cog&quot;))!!;
+    io::println(describe(&quot;Cog&quot;, count: 3))!!;
+}
+</textarea>
+<div class="actions"><button class="run" type="button" disabled>Run</button><button class="reset" type="button">Reset</button><span class="run-status" role="status" aria-live="polite"></span></div>
+<div class="result" hidden><div class="output-group"><h3>Output</h3><pre class="output" tabindex="0"></pre></div><div class="diagnostic-group" hidden><h3>Diagnostics</h3><pre class="diagnostics" tabindex="0"></pre></div></div>
+<p class="exercise"><strong>Try it:</strong> Change the count argument, or add a semicolon after the function tail and check the result-type error.</p></section>
+<section id="control" class="lesson"><h2>5. Conditions and loops</h2><p>if takes a boolean condition. A range loop excludes its end bound; while repeats while its condition is true. An if expression can return a value from the selected branch.</p>
+<label class="editor-label" for="code-control">Cog example</label><textarea class="source" id="code-control" rows="16" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off">include std;
+use io;
+
+fn main() -&gt; nil {
+    var total = 0;
+    for i in 0..5 {
+        total += i;
+    }
+    var remaining = 2;
+    while remaining &gt; 0 {
+        io::println(remaining)!!;
+        remaining -= 1;
+    }
+    const label = if total &gt; 5 { &quot;large&quot; } else { &quot;small&quot; };
+    io::println($&quot;sum={total}, {label}&quot;)!!;
+}
+</textarea>
+<div class="actions"><button class="run" type="button" disabled>Run</button><button class="reset" type="button">Reset</button><span class="run-status" role="status" aria-live="polite"></span></div>
+<div class="result" hidden><div class="output-group"><h3>Output</h3><pre class="output" tabindex="0"></pre></div><div class="diagnostic-group" hidden><h3>Diagnostics</h3><pre class="diagnostics" tabindex="0"></pre></div></div>
+<p class="exercise"><strong>Try it:</strong> Change the end of the range and predict the sum before running.</p></section>
+<section id="arrays" class="lesson"><h2>6. Arrays and shared values</h2><p>Arrays use zero-based indexing. array &lt;&lt; value appends, value &gt;&gt; array prepends, and both mutate the array. Assignment shares the array: a const view observes changes made through an existing mutable binding.</p>
+<label class="editor-label" for="code-arrays">Cog example</label><textarea class="source" id="code-arrays" rows="12" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off">include std;
+use io;
+
+fn main() -&gt; nil {
+    var values = [1, 2];
+    const view = values;
+    values &lt;&lt; 3;
+    0 &gt;&gt; values;
+    values[1] = 9;
+    io::println(view)!!;
+    io::println(len(values))!!;
+}
+</textarea>
+<div class="actions"><button class="run" type="button" disabled>Run</button><button class="reset" type="button">Reset</button><span class="run-status" role="status" aria-live="polite"></span></div>
+<div class="result" hidden><div class="output-group"><h3>Output</h3><pre class="output" tabindex="0"></pre></div><div class="diagnostic-group" hidden><h3>Diagnostics</h3><pre class="diagnostics" tabindex="0"></pre></div></div>
+<p class="exercise"><strong>Try it:</strong> Append another value. Try mutating view instead of values.</p></section>
+<section id="strings" class="lesson"><h2>7. Strings and input</h2><p>Plain strings keep braces literally. Use $&quot;...{expression}...&quot; for interpolation and {{ / }} for literal braces inside it. read_line reads a line from stdin; str::trim removes surrounding whitespace.</p>
+<label class="editor-label" for="code-strings">Cog example</label><textarea class="source" id="code-strings" rows="10" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off">include std;
+use io;
+use str;
+
+fn main() -&gt; nil {
+    const name = str::trim(io::read_line()!!);
+    io::println(&quot;Plain: {name}&quot;)!!;
+    io::println($&quot;Hello, {name}! 2 + 3 = {2 + 3}&quot;)!!;
+    io::println($&quot;{{Cog}}&quot;)!!;
+}
+</textarea>
+<details open><summary>Program input (stdin)</summary><label for="input-strings">Text supplied before the program starts</label><textarea id="input-strings" class="input" rows="2" spellcheck="false"> Ada 
+</textarea></details><div class="actions"><button class="run" type="button" disabled>Run</button><button class="reset" type="button">Reset</button><span class="run-status" role="status" aria-live="polite"></span></div>
+<div class="result" hidden><div class="output-group"><h3>Output</h3><pre class="output" tabindex="0"></pre></div><div class="diagnostic-group" hidden><h3>Diagnostics</h3><pre class="diagnostics" tabindex="0"></pre></div></div>
+<p class="exercise"><strong>Try it:</strong> Change the supplied input and the expression inside the interpolated string.</p></section>
+<section id="patterns" class="lesson"><h2>8. Structs, enums, and patterns</h2><p>Construct structs and enum payloads with ordinary calls. when checks one pattern; match selects among several arms. Payload bindings are positional, and a guard adds a boolean condition.</p>
+<label class="editor-label" for="code-patterns">Cog example</label><textarea class="source" id="code-patterns" rows="19" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off">include std;
+use io;
+
+struct Point { x: int, y: int = 0 }
+enum Command { Move(x: int), Stop }
+
+fn main() -&gt; nil {
+    const point = Point(2, y: 4);
+    const command = Command::Move(point.x);
+    when command is Command::Move(x) if x &gt; 0 {
+        io::println($&quot;Move to {x}&quot;)!!;
+    }
+    const label = match command {
+        Command::Move(x) =&gt; &quot;moving&quot;,
+        Command::Stop =&gt; &quot;stopped&quot;,
+        _ =&gt; &quot;unknown&quot;,
+    };
+    io::println(label)!!;
+}
+</textarea>
+<div class="actions"><button class="run" type="button" disabled>Run</button><button class="reset" type="button">Reset</button><span class="run-status" role="status" aria-live="polite"></span></div>
+<div class="result" hidden><div class="output-group"><h3>Output</h3><pre class="output" tabindex="0"></pre></div><div class="diagnostic-group" hidden><h3>Diagnostics</h3><pre class="diagnostics" tabindex="0"></pre></div></div>
+<p class="exercise"><strong>Try it:</strong> Change the command to Command::Stop() and observe which branches run.</p></section>
+<section id="errors" class="lesson"><h2>9. Errors and cleanup</h2><p>?? chooses a fallback for nil; ?! chooses one for Error. try/catch observes an unhandled Error in its lexical body. Postfix !! returns an Error from the current function through cleanup, bypassing its local catches. defer runs cleanup when its scope is exited.</p>
+<label class="editor-label" for="code-errors">Cog example</label><textarea class="source" id="code-errors" rows="16" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off">include std;
+use io;
+
+fn count(value: int?) -&gt; int { value ?? 3 }
+fn parse(text: str) -&gt; int { (text as int)!! }
+
+fn main() -&gt; nil {
+    defer { io::println(&quot;Done.&quot;); }
+    io::println(count(nil))!!;
+    io::println((&quot;invalid&quot; as int) ?! 7)!!;
+    try {
+        io::println(parse(&quot;bad&quot;));
+    } catch(error) {
+        io::println(error.error_kind())!!;
+    }
+}
+</textarea>
+<div class="actions"><button class="run" type="button" disabled>Run</button><button class="reset" type="button">Reset</button><span class="run-status" role="status" aria-live="polite"></span></div>
+<div class="result" hidden><div class="output-group"><h3>Output</h3><pre class="output" tabindex="0"></pre></div><div class="diagnostic-group" hidden><h3>Diagnostics</h3><pre class="diagnostics" tabindex="0"></pre></div></div>
+<p class="exercise"><strong>Try it:</strong> Replace &quot;bad&quot; in the last call with &quot;42&quot;. The catch branch should no longer run.</p></section>
+<section class="next"><h2>Next: modules and projects</h2><p>Use <code>cog init my-app</code> to create a project. Modules follow source filenames; <code>use</code> imports names and <code>public</code> exposes declarations to other modules.</p><p>Try the <a href="../examples/modules/README.md">modules example</a> and <a href="../examples/package_include/">package inclusion example</a>, then read the <a href="../docs/PROJECT_FORMATS.md">project guide</a>. The <a href="../docs/LANGUAGE.md">language reference</a> covers further details and current limitations.</p><p>This tutorial uses implemented syntax. Typed arrays, scalar/struct compile-time evaluation, type aliases, extension methods, inferred specialization of runtime generic functions, and statically dispatched traits are available. Generic structs, closures, and JIT remain future work; see the <a href="../examples/README.md">examples</a> and <a href="../docs/LANGUAGE.md#compile-time-evaluation">language reference</a>.</p></section>
+<footer>Cog is experimental. <a href="../ROADMAP.md">Roadmap</a> · <a href="README.md">Tutorial setup and tests</a></footer></main></div>
+<script>
+(() => {
+    let connected = false;
+    const lessons = [...document.querySelectorAll('.lesson')];
+    const connection = document.getElementById('connection');
+    const connect = async () => {
+        if (location.protocol === 'file:') return;
+        try {
+            const response = await fetch('/api/status');
+            if (!response.ok || !(await response.json()).ready) throw new Error();
+            connected = true;
+            connection.textContent = 'Connected to local Cog. Edit an example and run it. Input is supplied before execution.';
+            lessons.forEach(lesson => { lesson.querySelector('.run').disabled = false; });
+        } catch { connection.textContent = 'The local server is unavailable. Start node web/server.mts and open the URL it prints.'; }
+    };
+    lessons.forEach(lesson => {
+        const editor = lesson.querySelector('.source');
+        const input = lesson.querySelector('.input');
+        const run = lesson.querySelector('.run');
+        const reset = lesson.querySelector('.reset');
+        const status = lesson.querySelector('.run-status');
+        const result = lesson.querySelector('.result');
+        const diagnostics = lesson.querySelector('.diagnostics');
+        const diagnosticGroup = lesson.querySelector('.diagnostic-group');
+        const output = lesson.querySelector('.output');
+        let running = false;
+        const execute = async () => {
+            if (!connected || running) return;
+            running = true;
+            run.disabled = reset.disabled = true;
+            status.textContent = 'Running…';
+            result.hidden = false;
+            output.textContent = '';
+            diagnostics.textContent = '';
+            diagnosticGroup.hidden = true;
+            try {
+                const response = await fetch('/api/run', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({source:editor.value,input:input?.value ?? ''}) });
+                const value = await response.json();
+                if (!response.ok) throw new Error(value.error || 'Could not run the example.');
+                output.textContent = value.stdout || (value.ok ? 'Program finished without output.' : 'No output.');
+                diagnostics.textContent = value.diagnostics;
+                diagnosticGroup.hidden = !value.diagnostics;
+                status.textContent = value.ok ? 'Finished' : value.phase === 'compile' ? 'Compilation failed' : 'Execution failed';
+            } catch (error) {
+                status.textContent = 'Could not run';
+                diagnostics.textContent = error.message || 'The local server is unavailable.';
+                diagnosticGroup.hidden = false;
+            } finally {
+                running = false;
+                run.disabled = !connected;
+                reset.disabled = false;
+            }
+        };
+        run.addEventListener('click', execute);
+        editor.addEventListener('keydown', event => { if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') { event.preventDefault(); execute(); } });
+        reset.addEventListener('click', () => { editor.value = editor.defaultValue; if (input) input.value = input.defaultValue; result.hidden = true; status.textContent = ''; editor.focus(); });
+    });
+    document.querySelectorAll('aside a').forEach(link => link.addEventListener('click', () => {
+        document.querySelectorAll('aside a').forEach(item => item.removeAttribute('aria-current'));
+        link.setAttribute('aria-current','location');
+    }));
+    connect();
+})();
+</script></body></html>

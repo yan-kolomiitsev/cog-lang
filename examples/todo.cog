@@ -1,0 +1,167 @@
+// An interactive todo list persisted as plain text in txt/todo.txt.
+// Commands: add, done, remove, list, stats, help, quit.
+// Each saved line starts with [ ] or [x], followed by the task name.
+// io::read_line() returns a line without the newline, or an Error on input failure.
+include std;
+use collections from std;
+use io;
+use bytes;
+use err::Error;
+use fmt;
+use fs;
+use str::{trim, builder, build, split,};
+
+comptime PROMPT = "> ";
+comptime HELP = "commands: add, done, remove, list, stats, help, quit";
+comptime NOTES_PATH = "txt/todo.txt";
+
+fn read_notes() -> str {
+    // a+ creates the notes file on first run without truncating existing notes.
+    const file = io::open(NOTES_PATH, "a+", 0)!!;
+    defer { io::close(file)!!; }
+
+    const metadata = fs::metadata(NOTES_PATH)!!;
+    const size = metadata.len as int;
+    var data = bytes::new(size)!!;
+    var offset = 0;
+    while offset < size {
+        const count = io::read_into(file, data, offset, size - offset)!!;
+        if count == 0 { break; }
+        offset += count;
+    }
+    bytes::to_str(data, 0, offset)!!
+}
+
+fn save_tasks(tasks: collections::Map[str, bool]) -> nil {
+    var output = builder()!!;
+    for name in tasks.keys() {
+        var mark = "[ ] ";
+        if tasks.get(name) ?! false { mark = "[x] "; }
+        fmt::write(output, "{}", mark)!!;
+        fmt::write(output, "{}", name)!!;
+        fmt::write(output, "{}", "\n")!!;
+    }
+    const text = build(output)!!;
+    const data = bytes::from_str(text)!!;
+
+    const file = io::open(NOTES_PATH, "w", 4096)!!;
+    defer { io::close(file)!!; }
+    io::write_all(file, data, 0, bytes::len(data)!!)!!;
+    io::flush(file)!!;
+}
+
+fn load_tasks() -> collections::Map[str, bool] {
+    const text = read_notes()!!;
+    var tasks = collections::map_new[str, bool]();
+    if text == "" { return tasks; }
+
+    const lines = split(text, "\n")!!;
+    for index in 0..len(lines) {
+        const line = lines[index] as str;
+        if line == "" { continue; }
+
+        const data = bytes::from_str(line)!!;
+        const length = bytes::len(data)!!;
+        if length < 4 {
+            return Error::InvalidArgument("todo.txt line");
+        }
+
+        const marker = bytes::to_str(data, 0, 4)!!;
+        var note_end = length;
+        // Accept files edited with Windows CRLF line endings as well.
+        if bytes::get(data, note_end - 1)!! == 13 { note_end -= 1; }
+        if note_end <= 4 {
+            return Error::InvalidArgument("todo.txt empty task");
+        }
+        const name = bytes::to_str(data, 4, note_end - 4)!!;
+
+        if marker == "[ ] " {
+            tasks.set(name, false);
+        } else if marker == "[x] " {
+            tasks.set(name, true);
+        } else {
+            return Error::InvalidArgument("todo.txt task marker");
+        }
+    }
+    tasks
+}
+
+fn count_done(tasks: collections::Map[str, bool]) -> int {
+    var finished = 0;
+    for name in tasks.keys() {
+        if tasks.get(name) ?! false { finished += 1; }
+    }
+    finished
+}
+
+fn show(tasks: collections::Map[str, bool]) -> nil {
+    if tasks.is_empty() {
+        io::println("(nothing to do)")!!;
+        return nil;
+    }
+    for name in tasks.keys() {
+        var mark = "[ ]";
+        if tasks.get(name) ?! false { mark = "[x]"; }
+        io::println($"{mark} {name}")!!;
+    }
+}
+
+fn main() -> nil {
+    var tasks = load_tasks()!!;
+    var running = true;
+
+    io::println($"Loaded {tasks.len()} notes from {NOTES_PATH}")!!;
+    io::println(HELP)!!;
+    while running {
+        io::print(PROMPT)!!;
+        const command = trim(io::read_line() ?! "quit")!!;
+
+        match command {
+            "add" => {
+                io::print("note: ")!!;
+                const name = io::read_line() ?! "";
+                if name == "" {
+                    io::println("empty note, nothing added")!!;
+                } else if tasks.set(name, false) {
+                    save_tasks(tasks)!!;
+                    io::println("saved")!!;
+                } else {
+                    save_tasks(tasks)!!;
+                    io::println("already existed, marked as not done")!!;
+                }
+            },
+            "done" => {
+                io::print("note: ")!!;
+                const name = io::read_line() ?! "";
+                if tasks.contains(name) {
+                    tasks.set(name, true);
+                    save_tasks(tasks)!!;
+                    io::println("saved as done")!!;
+                } else {
+                    io::println("no such note")!!;
+                }
+            },
+            "remove" => {
+                io::print("note: ")!!;
+                const name = io::read_line() ?! "";
+                if tasks.contains(name) {
+                    tasks.remove(name)!!;
+                    save_tasks(tasks)!!;
+                    io::println("removed and saved")!!;
+                } else {
+                    io::println("no such note")!!;
+                }
+            },
+            "list" => { show(tasks)!!; },
+            "stats" => {
+                const finished = count_done(tasks);
+                const total = tasks.len();
+                io::println($"{finished} of {total} done")!!;
+            },
+            "help" => { io::println(HELP)!!; },
+            "quit" => { running = false; },
+            _ => { io::println("unknown command, type help")!!; },
+        }
+    }
+    io::println("bye")!!;
+}

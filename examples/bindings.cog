@@ -1,0 +1,9 @@
+include std;
+use io;
+
+fn main() -> nil {
+    const name: str = "Cog";
+    var count: int = 1;
+    count += 2;
+    io::println($"{name}: {count}")!!;
+}

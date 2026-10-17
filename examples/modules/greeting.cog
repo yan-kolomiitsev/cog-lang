@@ -1,0 +1,3 @@
+public fn greet(name: str) -> str {
+    $"Hello, {name}!"
+}

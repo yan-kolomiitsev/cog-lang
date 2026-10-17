@@ -1,0 +1,128 @@
+// Array utilities preserve element references and never mutate their inputs.
+use eq::Eq;
+use err::Error;
+use ord::Ord;
+
+fn array_length(items, operation: str) -> int {
+    items!!;
+    when items is str { return Error::TypeMismatch(operation); }
+    len(items)
+}
+
+public fn is_empty(items) -> bool {
+    array_length(items, "array::is_empty")!! == 0
+}
+
+public fn first(items) {
+    if array_length(items, "array::first")!! == 0 { return nil; }
+    items[0]
+}
+
+public fn last(items) {
+    const length = array_length(items, "array::last")!!;
+    if length == 0 { return nil; }
+    items[length - 1]
+}
+
+// Equality follows the language's == operator, including its errors.
+public fn index_of(items, value) -> int? {
+    const length = array_length(items, "array::index_of")!!;
+    value!!;
+    for index in 0..length {
+        if (items[index] == value)!! { return index; }
+    }
+    nil
+}
+
+public fn contains(items, value) -> bool {
+    index_of(items, value)!! != nil
+}
+
+extend[T: type] T[] {
+    // Swaps two existing elements after validating both indices and reads.
+    public fn swap(mut self, left: int, right: int) -> nil {
+        const length = self.len();
+        if left < 0 || left >= length {
+            return Error::IndexOutOfBounds(left, length);
+        }
+        if right < 0 || right >= length {
+            return Error::IndexOutOfBounds(right, length);
+        }
+        if left == right { return nil; }
+        const left_value = self[left]!!;
+        const right_value = self[right]!!;
+        self[left] = right_value;
+        self[right] = left_value;
+        nil
+    }
+}
+
+// A statically typed equality search. Unlike index_of, this requires an Eq
+// implementation and rejects unsupported element types during compilation.
+public fn position[T: type + Eq[T]](items: T[], value: T) -> int? {
+    value!!;
+    const length = len(items);
+    for index in 0..length {
+        const item = items[index]!!;
+        if item.equals(value) { return index; }
+    }
+    nil
+}
+
+// Select an existing element; arrays remain unchanged and shared values stay shared.
+public fn min[T: type + Ord](items: T[]) -> T {
+    const length = len(items);
+    if length == 0 { return Error::InvalidArgument("array::min"); }
+    var smallest = items[0]!!;
+    for index in 1..length {
+        const item = items[index]!!;
+        if item.compare(smallest) < 0 { smallest = item; }
+    }
+    smallest
+}
+
+public fn max[T: type + Ord](items: T[]) -> T {
+    const length = len(items);
+    if length == 0 { return Error::InvalidArgument("array::max"); }
+    var largest = items[0]!!;
+    for index in 1..length {
+        const item = items[index]!!;
+        if item.compare(largest) > 0 { largest = item; }
+    }
+    largest
+}
+
+// A fresh outer array; nested arrays and other shared elements remain aliases.
+public fn slice(items, offset: int, count: int) {
+    const length = array_length(items, "array::slice")!!;
+    offset!!;
+    count!!;
+    if offset < 0 || offset > length || count < 0 || count > length - offset {
+        return Error::InvalidArgument("array::slice");
+    }
+    var result = items.empty_like()!!;
+    for index in offset..(offset + count) { result << items[index]!!; }
+    result
+}
+
+public fn reversed(items) {
+    const length = array_length(items, "array::reversed")!!;
+    var result = items.empty_like()!!;
+    var index = length;
+    while index > 0 {
+        index -= 1;
+        result << items[index]!!;
+    }
+    result
+}
+
+public fn concat(left, right) {
+    const left_length = array_length(left, "array::concat")!!;
+    const right_length = array_length(right, "array::concat")!!;
+    var result = left.empty_like()!!;
+    for index in 0..left_length { result << left[index]!!; }
+    for index in 0..right_length { result << right[index]!!; }
+    const compatible = left.empty_like()!! + right.empty_like()!!;
+    compatible!!;
+    result
+}

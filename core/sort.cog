@@ -1,0 +1,214 @@
+// In-place sorting for values that implement Ord.
+use array;
+use clone::Clone;
+use clone::value;
+use ord::Ord;
+use sort::native_quick;
+use sort::native_stable;
+
+const INSERTION_THRESHOLD = 16;
+
+struct Partition {
+    lower: int,
+    upper: int
+}
+
+fn insertion_range[T: type + Ord](items: T[], low: int, high: int) {
+    var index = low + 1;
+    while index <= high {
+        var position = index;
+        while position > low {
+            if items[position - 1].compare(items[position]) > 0 {
+                items.swap(position - 1, position)!!;
+                position -= 1;
+            } else {
+                break;
+            }
+        }
+        index += 1;
+    }
+}
+
+// Stable in-place insertion sort; exposed as a small-input teaching example too.
+public fn insertion[T: type + Ord](items: T[]) -> nil {
+    var index = 1;
+    while index < items.len() {
+        var position = index;
+        while position > 0 {
+            if items[position - 1].compare(items[position]) > 0 {
+                items.swap(position - 1, position)!!;
+                position -= 1;
+            } else {
+                break;
+            }
+        }
+        index += 1;
+    }
+}
+
+public fn stable[T: type + Ord](items: T[]) -> nil {
+    if native_stable(items) { return nil; }
+    insertion_range(items, 0, items.len() - 1)!!;
+}
+
+// Selection sort is intentionally quadratic and unstable, for teaching use.
+public fn selection[T: type + Ord](items: T[]) -> nil {
+    var index = 0;
+    while index < items.len() {
+        var min_index = index;
+        var candidate = index + 1;
+        while candidate < items.len() {
+            if items[candidate].compare(items[min_index]) < 0 {
+                min_index = candidate;
+            }
+            candidate += 1;
+        }
+        if min_index != index { items.swap(index, min_index)!!; }
+        index += 1;
+    }
+}
+
+// Bubble sort is intentionally quadratic and stable, for teaching use.
+public fn bubble[T: type + Ord](items: T[]) -> nil {
+    var end = items.len();
+    while end > 1 {
+        var index = 0;
+        while index + 1 < end {
+            if items[index].compare(items[index + 1]) > 0 {
+                items.swap(index, index + 1)!!;
+            }
+            index += 1;
+        }
+        end -= 1;
+    }
+}
+
+fn median_index[T: type + Ord](items: T[], low: int, high: int) -> int {
+    const middle = low + (high - low) / 2;
+    if items[low].compare(items[middle]) < 0 {
+        if items[middle].compare(items[high]) < 0 { return middle; }
+        if items[low].compare(items[high]) < 0 { return high; }
+        return low;
+    }
+    if items[low].compare(items[high]) < 0 { return low; }
+    if items[middle].compare(items[high]) < 0 { return high; }
+    middle
+}
+
+// Three-way partition keeps equal keys out of the recursive ranges.
+fn partition[T: type + Ord](items: T[], low: int, high: int) -> Partition {
+    const pivot = items[median_index(items, low, high)]!!;
+    var lower = low;
+    var current = low;
+    var upper = high;
+    while current <= upper {
+        const order = items[current]!!.compare(pivot)!!;
+        if order < 0 {
+            items.swap(lower, current)!!;
+            lower += 1;
+            current += 1;
+        } else if order > 0 {
+            items.swap(current, upper)!!;
+            upper -= 1;
+        } else {
+            current += 1;
+        }
+    }
+    Partition(lower: lower, upper: upper)
+}
+
+fn sift_down[T: type + Ord](items: T[], low: int, root_index: int, end: int) {
+    var root = root_index;
+    while root < end / 2 {
+        var child = root * 2 + 1;
+        if child + 1 < end && items[low + child].compare(items[low + child + 1]) < 0 {
+            child += 1;
+        }
+        if items[low + root].compare(items[low + child]) < 0 {
+            items.swap(low + root, low + child)!!;
+            root = child;
+        } else {
+            break;
+        }
+    }
+}
+
+fn heap_sort_range[T: type + Ord](items: T[], low: int, high: int) {
+    const size = high - low + 1;
+    var start = size / 2;
+    while start > 0 {
+        start -= 1;
+        sift_down(items, low, start, size)!!;
+    }
+    var end = size;
+    while end > 1 {
+        end -= 1;
+        items.swap(low, low + end)!!;
+        sift_down(items, low, 0, end)!!;
+    }
+}
+
+// Recursion is limited to the smaller side; the larger side is handled in a loop.
+fn quick_sort_range[T: type + Ord](items: T[], low: int, high: int, depth_limit: int) -> nil {
+    var lower = low;
+    var upper = high;
+    var remaining_depth = depth_limit;
+    while lower < upper {
+        if upper - lower + 1 < INSERTION_THRESHOLD {
+            insertion_range(items, lower, upper)!!;
+            return nil;
+        }
+        if remaining_depth == 0 {
+            heap_sort_range(items, lower, upper)!!;
+            return nil;
+        }
+        remaining_depth -= 1;
+
+        const bounds = partition(items, lower, upper)!!;
+        const left_size = bounds.lower - lower;
+        const right_size = upper - bounds.upper;
+        if left_size < right_size {
+            if left_size > 1 {
+                quick_sort_range(items, lower, bounds.lower - 1, remaining_depth)!!;
+            }
+            lower = bounds.upper + 1;
+        } else {
+            if right_size > 1 {
+                quick_sort_range(items, bounds.upper + 1, upper, remaining_depth)!!;
+            }
+            upper = bounds.lower - 1;
+        }
+    }
+    nil
+}
+
+// Unstable introspective-in-stack quicksort. Three-way partitioning handles duplicates.
+public fn quick[T: type + Ord](items: T[]) -> nil {
+    if native_quick(items) { return nil; }
+    if items.len() > 1 {
+        var depth_limit = 0;
+        var size = items.len();
+        while size > 1 {
+            size /= 2;
+            depth_limit += 2;
+        }
+        quick_sort_range(items, 0, items.len() - 1, depth_limit)!!;
+    }
+}
+
+// Returns an independently cloned and sorted array; requires cloneable elements.
+public fn sorted[T: type + Ord + Clone](items: T[]) -> T[] {
+    var result: T[] = [];
+    for item in items { result << value(item); }
+    quick(result)!!;
+    result
+}
+
+public fn is_sorted[T: type + Ord](items: T[]) -> bool {
+    var index = 1;
+    while index < items.len() {
+        if items[index].compare(items[index - 1]) < 0 { return false; }
+        index += 1;
+    }
+    true
+}

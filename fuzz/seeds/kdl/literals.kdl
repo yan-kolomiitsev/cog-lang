@@ -1,0 +1,3 @@
+// Braces in strings and comments must not consume the nesting budget.
+package "example" version=#"{{{ raw string }}}"#
+/- ignored { child "value"; }

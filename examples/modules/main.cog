@@ -1,0 +1,7 @@
+include std;
+use io;
+use greeting;
+
+fn main() -> nil {
+    io::println(greeting::greet("Cog"))!!;
+}

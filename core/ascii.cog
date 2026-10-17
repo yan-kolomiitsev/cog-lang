@@ -1,0 +1,50 @@
+// Classify and change the case of individual byte values, not Unicode text.
+use err::Error;
+
+fn byte_value(value: int, operation: str) -> int {
+    value!!;
+    if value < 0 || value > 255 { return Error::InvalidArgument(operation); }
+    value
+}
+
+public fn is_ascii(value: int) -> bool {
+    byte_value(value, "ascii::is_ascii")!! < 128
+}
+
+public fn is_digit(value: int) -> bool {
+    const byte = byte_value(value, "ascii::is_digit")!!;
+    byte >= 48 && byte <= 57
+}
+
+public fn is_lowercase(value: int) -> bool {
+    const byte = byte_value(value, "ascii::is_lowercase")!!;
+    byte >= 97 && byte <= 122
+}
+
+public fn is_uppercase(value: int) -> bool {
+    const byte = byte_value(value, "ascii::is_uppercase")!!;
+    byte >= 65 && byte <= 90
+}
+
+public fn is_alpha(value: int) -> bool {
+    is_lowercase(value)!! || is_uppercase(value)!!
+}
+
+public fn is_alphanumeric(value: int) -> bool {
+    is_alpha(value)!! || is_digit(value)!!
+}
+
+public fn is_whitespace(value: int) -> bool {
+    const byte = byte_value(value, "ascii::is_whitespace")!!;
+    byte == 32 || (byte >= 9 && byte <= 13)
+}
+
+public fn to_lowercase(value: int) -> int {
+    const byte = byte_value(value, "ascii::to_lowercase")!!;
+    if is_uppercase(byte)!! { byte + 32 } else { byte }
+}
+
+public fn to_uppercase(value: int) -> int {
+    const byte = byte_value(value, "ascii::to_uppercase")!!;
+    if is_lowercase(byte)!! { byte - 32 } else { byte }
+}
