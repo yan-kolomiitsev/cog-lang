@@ -107,8 +107,8 @@ impl Drop for Fixture {
 }
 
 fn relative_path(from: &std::path::Path, to: &std::path::Path) -> PathBuf {
-    let from = from.canonicalize().unwrap();
-    let to = to.canonicalize().unwrap();
+    let from = comparable_path(from.canonicalize().unwrap());
+    let to = comparable_path(to.canonicalize().unwrap());
     let from_components: Vec<_> = from.components().collect();
     let to_components: Vec<_> = to.components().collect();
     let common = from_components
@@ -123,6 +123,23 @@ fn relative_path(from: &std::path::Path, to: &std::path::Path) -> PathBuf {
     for component in &to_components[common..] {
         path.push(component.as_os_str());
     }
+    path
+}
+
+fn comparable_path(path: PathBuf) -> PathBuf {
+    #[cfg(windows)]
+    {
+        let path = path.to_string_lossy();
+        let path = if let Some(unc) = path.strip_prefix(r"\\?\UNC\") {
+            format!(r"\\{unc}")
+        } else if let Some(path) = path.strip_prefix(r"\\?\") {
+            path.to_owned()
+        } else {
+            path.into_owned()
+        };
+        PathBuf::from(path)
+    }
+    #[cfg(not(windows))]
     path
 }
 fn success(output: &Output) {
@@ -834,9 +851,12 @@ fn comptime_package_paths_are_relative_to_the_invocation_directory() {
         "external/game/src/random.cog",
         "public fn answer() -> int { 9 }",
     );
-    let relative = relative_path(&std::env::current_dir().unwrap(), &external)
-        .to_string_lossy()
-        .replace('\\', "/");
+    let relative = relative_path(&std::env::current_dir().unwrap(), &external);
+    assert!(
+        relative.is_relative(),
+        "expected a relative path, got {relative:?}"
+    );
+    let relative = relative.to_string_lossy().replace('\\', "/");
     f.write(
         "src/main.cog",
         &format!("include game from {relative}; use io; use random from game as game_random; fn main() {{ io::println(game_random::answer()); }}"),
