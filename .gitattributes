@@ -1,0 +1,2 @@
+# Keep the embedded text fixture's line endings stable across platforms.
+examples/build_inputs/message.txt text eol=lf
