@@ -63,8 +63,8 @@ jobs:
       - run: cargo fmt --all -- --check 2>&1 | tee target/ci-evidence/format.log
       - run: cargo package --locked 2>&1 | tee target/ci-evidence/package.log
       - name: Verify packaged SDK and verifier fixtures
-        run: cargo test --locked --manifest-path target/package/cog-0.1.0/Cargo.toml --target-dir target --test sdk --test sdk_plugins --test bytecode_security 2>&1 | tee target/ci-evidence/package-tests.log
-      - run: cargo install --path target/package/cog-0.1.0 --locked --bin cog --root target/install 2>&1 | tee target/ci-evidence/install.log
+        run: cargo test --locked --manifest-path target/package/cog-0.1.0-alpha.1/Cargo.toml --target-dir target --test sdk --test sdk_plugins --test bytecode_security 2>&1 | tee target/ci-evidence/package-tests.log
+      - run: cargo install --path target/package/cog-0.1.0-alpha.1 --locked --bin cog --root target/install 2>&1 | tee target/ci-evidence/install.log
       - run: |
           cli=target/install/bin/cog
           if [[ "$RUNNER_OS" == Windows ]]; then cli+=.exe; fi
