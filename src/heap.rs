@@ -54,6 +54,26 @@ struct Registry {
     slots: Vec<Slot>,
     free: Vec<usize>,
     allocations_since_collection: usize,
+    live: usize,
+    collection_threshold: usize,
+}
+
+impl Registry {
+    fn retire(&mut self, id: ObjectId) {
+        let slot = &mut self.slots[id.slot];
+        if slot.generation != id.generation || slot.object.is_none() {
+            return;
+        }
+        slot.object = None;
+        self.live -= 1;
+        if let Some(generation) = slot.generation.checked_add(1) {
+            slot.generation = generation;
+            // A failed free-list growth only prevents reuse of this dead slot.
+            if self.free.try_reserve(1).is_ok() {
+                self.free.push(id.slot);
+            }
+        }
+    }
 }
 
 thread_local! {
@@ -157,6 +177,7 @@ impl<T: HeapObject> HeapRef<T> {
                 generation: 0,
             }
         };
+        registry_state.live += 1;
         drop(registry_state);
 
         Ok(Self {
@@ -203,42 +224,97 @@ impl<T: 'static> Drop for HeapRef<T> {
     }
 }
 
+// Pin immediate children before clearing a uniquely owned node. Releasing the
+// pins through this work list prevents recursive destruction without tracing
+// unrelated live objects. Shared nodes (including cycles) stay for tracing GC.
+type PendingDrop = (Rc<RefCell<Registry>>, ObjectId, Rc<dyn HeapObject>);
+
+fn pin_children(object: &dyn HeapObject, work: &mut Vec<PendingDrop>) -> Result<(), RuntimeError> {
+    let mut result = Ok(());
+    object.visit_values(&mut |value| {
+        if result.is_err() {
+            return;
+        }
+        let traversal = value.visit_heap_objects(&mut |child| {
+            if result.is_err() {
+                return;
+            }
+            if work.try_reserve(1).is_err() {
+                result = Err(RuntimeError::ResourceLimit {
+                    resource: "VM heap cleanup",
+                });
+                return;
+            }
+            let object = {
+                let state = child.registry.borrow();
+                state
+                    .slots
+                    .get(child.id.slot)
+                    .filter(|slot| slot.generation == child.id.generation)
+                    .and_then(|slot| slot.object.as_ref())
+                    .and_then(Weak::upgrade)
+            };
+            if let Some(object) = object {
+                work.push((child.registry, child.id, object));
+            }
+        });
+        if let Err(error) = traversal {
+            result = Err(error);
+        }
+    });
+    result
+}
+
 fn collect_on_drop<T: HeapObject>(value: &HeapRef<T>) {
     if COLLECTING.with(std::cell::Cell::get) || Rc::strong_count(&value.object) != 1 {
         return;
     }
     match value.object.has_heap_children() {
+        Ok(false) => {
+            value.registry.borrow_mut().retire(value.id);
+            return;
+        }
         Ok(true) => {}
-        Ok(false) => return,
         Err(_) => {
             std::mem::forget(value.object.clone());
             return;
         }
     }
-    if collect_ids(&[value.id]).is_err() {
-        // Keep the graph rooted if the collector cannot reserve its work list;
-        // dropping it normally could recurse through a hostile deep graph.
+    COLLECTING.with(|collecting| collecting.set(true));
+    let _flag = CollectionFlag;
+    let mut work = Vec::new();
+    if pin_children(&*value.object, &mut work).is_err() {
+        // Preserve the graph if cleanup storage is unavailable; ordinary Drop
+        // could overflow the host stack. Never release partially pinned chains.
+        std::mem::forget(work);
         std::mem::forget(value.object.clone());
+        return;
+    }
+    value.object.clear_values();
+    value.registry.borrow_mut().retire(value.id);
+    while let Some((registry, id, object)) = work.pop() {
+        if Rc::strong_count(&object) != 1 {
+            continue;
+        }
+        if pin_children(&*object, &mut work).is_err() {
+            std::mem::forget(work);
+            std::mem::forget(object);
+            return;
+        }
+        object.clear_values();
+        registry.borrow_mut().retire(id);
     }
 }
 
-pub(crate) fn pending_allocations() -> usize {
-    REGISTRY.with(|registry| registry.borrow().allocations_since_collection)
+pub(crate) fn collection_due() -> bool {
+    REGISTRY.with(|registry| {
+        let state = registry.borrow();
+        state.allocations_since_collection >= state.collection_threshold.max(256)
+    })
 }
 
 pub(crate) fn live_objects() -> usize {
-    REGISTRY.with(|registry| {
-        registry
-            .borrow()
-            .slots
-            .iter()
-            .filter(|slot| {
-                slot.object
-                    .as_ref()
-                    .is_some_and(|weak| weak.strong_count() != 0)
-            })
-            .count()
-    })
+    REGISTRY.with(|registry| registry.borrow().live)
 }
 
 /// Collect unreachable managed cycles on the current thread's Cog heap.
@@ -252,10 +328,6 @@ pub fn collect_cycles() -> Result<usize, RuntimeError> {
 /// references do not keep objects alive during this final collection.
 pub(crate) fn collect(discarded: &[Value]) -> Result<usize, RuntimeError> {
     collect_with_excluded(discarded, &[])
-}
-
-fn collect_ids(discarded: &[ObjectId]) -> Result<usize, RuntimeError> {
-    collect_with_excluded(&[], discarded)
 }
 
 fn collect_with_excluded(
@@ -457,13 +529,10 @@ fn collect_with_excluded(
         {
             continue;
         }
-        slot.object = None;
-        if let Some(generation) = slot.generation.checked_add(1) {
-            slot.generation = generation;
-            state.free.push(id.slot);
-        }
+        state.retire(id);
     }
     state.allocations_since_collection = 0;
+    state.collection_threshold = state.live.max(256);
     Ok(unreachable)
 }
 
@@ -473,6 +542,68 @@ mod tests {
 
     use super::*;
     use crate::value::{ArrayValue, ClosureCaptures, RecordValue};
+
+    #[test]
+    fn collection_intervals_grow_with_the_surviving_heap() {
+        collect_cycles().unwrap();
+        let mut roots = Vec::new();
+        let mut collections = 0;
+        for _ in 0..16_384 {
+            roots.push(HeapRef::new(RefCell::new(Vec::<u8>::new())));
+            if collection_due() {
+                collect_cycles().unwrap();
+                collections += 1;
+            }
+        }
+        assert!(
+            collections <= 8,
+            "{collections} complete traces for a growing live heap"
+        );
+        assert_eq!(live_objects(), roots.len());
+        drop(roots);
+        assert_eq!(live_objects(), 0);
+    }
+
+    #[test]
+    fn temporary_container_cleanup_does_not_trace_unrelated_or_shared_graphs() {
+        struct Counted(Rc<std::cell::Cell<usize>>);
+        impl HeapObject for Counted {
+            fn visit_values(&self, _: &mut dyn FnMut(&Value)) {
+                self.0.set(self.0.get() + 1);
+            }
+            fn clear_values(&self) {}
+        }
+        let visits = Rc::new(std::cell::Cell::new(0));
+        let roots = (0..2048)
+            .map(|_| HeapRef::new(Counted(visits.clone())))
+            .collect::<Vec<_>>();
+        let shared = HeapRef::new(ArrayValue::new(vec![Value::Int(42)]).unwrap());
+        for _ in 0..256 {
+            let child = HeapRef::new(ArrayValue::new(vec![Value::Array(shared.clone())]).unwrap());
+            drop(HeapRef::new(RecordValue::new(HashMap::from([(
+                "child".into(),
+                Value::Array(child),
+            )]))));
+            assert_eq!(live_objects(), roots.len() + 1);
+        }
+        assert_eq!(
+            visits.get(),
+            0,
+            "temporary drops traced the entire registry"
+        );
+        assert_eq!(shared.borrow().len(), 1);
+        drop(roots);
+        drop(shared);
+        assert_eq!(live_objects(), 0);
+    }
+
+    #[test]
+    fn forgotten_cleanup_roots_remain_in_the_live_object_budget() {
+        let before = live_objects();
+        let value = HeapRef::new(RecordValue::new(HashMap::new()));
+        std::mem::forget(value);
+        assert_eq!(live_objects(), before + 1);
+    }
 
     #[test]
     fn collection_breaks_cycles_and_reuses_slots_with_a_new_generation() {
@@ -552,13 +683,13 @@ mod tests {
     }
 
     #[test]
-    fn dropping_a_deep_graph_root_is_iterative() {
+    fn dropping_a_deep_record_chain_is_iterative() {
         let mut value = Value::Int(0);
-        for _ in 0..10_000 {
-            let record = HeapRef::new(RecordValue::new(HashMap::from([("next".into(), value)])));
-            value = Value::Array(HeapRef::new(
-                ArrayValue::new(vec![Value::Record(record)]).expect("record arrays are valid"),
-            ));
+        for _ in 0..100_000 {
+            value = Value::Record(HeapRef::new(RecordValue::new(HashMap::from([(
+                "next".into(),
+                value,
+            )]))));
         }
         drop(value);
         assert_eq!(live_objects(), 0);

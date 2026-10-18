@@ -1447,9 +1447,10 @@ fn bytes_concat(context: &mut RuntimeContext<'_>, args: &[Value]) -> Result<Valu
 fn bytes_from_str(context: &mut RuntimeContext<'_>, args: &[Value]) -> Result<Value, RuntimeError> {
     allocated(context, string(&args[0]).as_bytes())
 }
-fn bytes_to_str(_: &mut RuntimeContext<'_>, args: &[Value]) -> Result<Value, RuntimeError> {
+fn bytes_to_str(context: &mut RuntimeContext<'_>, args: &[Value]) -> Result<Value, RuntimeError> {
     let bytes = bytes_borrow(&args[0], "bytes::to_str")?;
     let span = range(&args[1], &args[2], bytes.len())?;
+    checked_size(context, integer(&args[2]))?;
     let text = std::str::from_utf8(&bytes[span]).map_err(|_| RuntimeError::ParseFailure {
         from: "bytes",
         to: "str",
@@ -1746,6 +1747,42 @@ mod limits_tests {
             checked_size(&context, above_previous_default as i64),
             Err(RuntimeError::ResourceLimit { resource: "bytes" })
         ));
+    }
+
+    #[test]
+    fn bytes_to_str_checks_the_selected_slice_against_the_buffer_cap() {
+        let mut output = Vec::new();
+        let mut context = RuntimeContext::new(&mut output, VmCapabilities::default());
+        // Existing host-owned bytes may be larger than a subsequent run's cap.
+        let bytes =
+            Value::Bytes(HeapRef::try_new(RefCell::new(vec![b'C', b'o', b'g', 0xff])).unwrap());
+        let import = NativeImport::named("bytes::to_str").unwrap();
+        context.limits.max_buffer_bytes = Some(2);
+        assert!(matches!(
+            import.call(&mut context, &[bytes.clone(), Value::Int(0), Value::Int(3)]),
+            Err(RuntimeError::ResourceLimit { resource: "bytes" })
+        ));
+        let prefix = import
+            .call(&mut context, &[bytes.clone(), Value::Int(0), Value::Int(2)])
+            .unwrap();
+        assert!(matches!(prefix, Value::Str(text) if text.as_ref() == "Co"));
+        assert!(matches!(
+            import.call(&mut context, &[bytes.clone(), Value::Int(3), Value::Int(1)]),
+            Err(RuntimeError::ParseFailure {
+                from: "bytes",
+                to: "str"
+            })
+        ));
+        context.limits.max_buffer_bytes = Some(0);
+        let empty = import
+            .call(&mut context, &[bytes.clone(), Value::Int(4), Value::Int(0)])
+            .unwrap();
+        assert!(matches!(empty, Value::Str(text) if text.is_empty()));
+        context.limits.max_buffer_bytes = None;
+        let complete = import
+            .call(&mut context, &[bytes, Value::Int(0), Value::Int(3)])
+            .unwrap();
+        assert!(matches!(complete, Value::Str(text) if text.as_ref() == "Cog"));
     }
 
     #[test]

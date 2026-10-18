@@ -23,6 +23,9 @@ fn number(value, operation: str) {
 
 public fn abs(x) {
     const value = number(x, "math::abs")!!;
+    when value is float {
+        if value == 0.0 { return 0.0; }
+    }
     if value < 0 {
         return 0 - value;
     }

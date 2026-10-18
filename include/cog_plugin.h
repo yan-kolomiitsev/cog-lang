@@ -15,6 +15,9 @@ extern "C" {
 
 /* Trusted, synchronous, calling-thread-only ABI. All views are borrowed.
  * No exception/panic may cross C. See docs/SDK.md for the complete contract. */
+/* Host-issued, invocation-scoped opaque token. The current host stores a
+ * 52-bit generation in bits 63..12 and a zero-based 12-bit slot in bits 11..0.
+ * Plugins must not inspect, synthesize, persist, or reuse handles. */
 typedef uint64_t CogHandle;
 typedef uint32_t CogStatus;
 enum { COG_OK=0, COG_FAILURE=1, COG_INVALID=2, COG_TYPE_MISMATCH=3,

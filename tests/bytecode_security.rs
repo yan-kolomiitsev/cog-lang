@@ -47,6 +47,100 @@ fn rejected(program: CompiledProgram, message: &str) {
 }
 
 #[test]
+fn typed_instruction_descriptors_reject_empty_identities_in_dead_code() {
+    use cog::value::RuntimeType as T;
+
+    for kind in 0..6 {
+        let descriptor = |name: &str| match kind {
+            0 => T::Nominal(name.into()),
+            1 => T::Variant(name.into()),
+            2 => T::Error(name.into()),
+            3 => T::Array(Box::new(T::Nominal(name.into()))),
+            4 => T::Nullable(Box::new(T::Variant(name.into()))),
+            _ => T::Tuple(vec![T::Error(name.into())]),
+        };
+        for constrain in [false, true] {
+            let marker = "descriptor-identity-sentinel";
+            let make = |ty| {
+                let mut instructions = vec![I::Halt];
+                if constrain {
+                    instructions.extend([I::Push(Value::Nil), I::ConstrainArrayType(ty)]);
+                } else {
+                    instructions.push(I::MakeTypedArray(0, ty));
+                }
+                instructions.extend([I::Pop, I::Halt]);
+                CompiledProgram::new(instructions)
+            };
+            let safe = make(descriptor(marker));
+            let mut bytes = bytecode::encode(&safe).unwrap();
+            bytecode::decode(&bytes).unwrap();
+            rejected(make(descriptor("")), "identity");
+
+            let offset = bytes
+                .windows(marker.len())
+                .position(|window| window == marker.as_bytes())
+                .unwrap();
+            bytes.splice(offset - 4..offset + marker.len(), 0u32.to_le_bytes());
+            let error = bytecode::decode(&bytes).unwrap_err();
+            assert!(error.contains("identity"), "{error}");
+            assert!(bytecode::read(std::io::Cursor::new(&bytes)).is_err());
+        }
+    }
+}
+
+#[test]
+fn verifier_preserves_scalar_and_error_results_of_array_templates() {
+    use cog::template::{ArrayItem, ArrayTemplate};
+
+    let heterogeneous = ArrayTemplate::Array(vec![
+        ArrayItem {
+            template: ArrayTemplate::Scalar(Value::Int(1)),
+            repeat: 1,
+        },
+        ArrayItem {
+            template: ArrayTemplate::Scalar(Value::Str("different type".into())),
+            repeat: 1,
+        },
+    ]);
+    for (template, predicate) in [
+        (ArrayTemplate::Scalar(Value::Bool(true)), ValueType::Bool),
+        (heterogeneous, ValueType::Error),
+    ] {
+        let sentinel = 0x1234_5678i64;
+        let mut program = CompiledProgram::new(vec![
+            I::PushArray(template),
+            I::IsType(predicate),
+            I::JumpIfFalse(5),
+            I::Push(Value::Int(sentinel)),
+            I::Pop,
+            I::Halt,
+        ]);
+        let mut bytes = bytecode::encode(&program).unwrap();
+        let decoded = bytecode::decode(&bytes).unwrap();
+        interpreter::run_with(&decoded, &mut Vec::new()).unwrap();
+        program.instructions[3] = I::Load(99);
+        assert!(matches!(
+            interpreter::run_with(&program, &mut Vec::new()),
+            Err(cog::error::RuntimeError::InvalidLocal(99))
+        ));
+        rejected(program, "not initialized");
+
+        let mut pattern = vec![46, 0];
+        pattern.extend_from_slice(&sentinel.to_le_bytes());
+        let offset = bytes
+            .windows(pattern.len())
+            .position(|window| window == pattern)
+            .unwrap();
+        let mut invalid_load = vec![48];
+        invalid_load.extend_from_slice(&99u32.to_le_bytes());
+        bytes.splice(offset..offset + pattern.len(), invalid_load);
+        let error = bytecode::decode(&bytes).unwrap_err();
+        assert!(error.contains("not initialized"), "{error}");
+        assert!(bytecode::read(std::io::Cursor::new(&bytes)).is_err());
+    }
+}
+
+#[test]
 fn verifier_rejects_underflows_merges_growing_cycles_and_fallthrough() {
     for instructions in [
         vec![I::Pop, I::Halt],
@@ -1003,6 +1097,98 @@ fn verifier_joins_record_field_categories_across_control_flow() {
     bytecode::validate(&program).unwrap();
     let decoded = bytecode::decode(&bytecode::encode(&program).unwrap()).unwrap();
     interpreter::run_with(&decoded, &mut Vec::new()).unwrap();
+}
+
+#[test]
+fn verifier_keeps_tuple_index_set_results_at_return_boundaries() {
+    use cog::value::RuntimeType;
+
+    for indirect in [false, true] {
+        let extra = usize::from(indirect);
+        let entry = 6 + extra;
+        let sentinel = 0x1234_5678i64;
+        let mut instructions = Vec::new();
+        if indirect {
+            instructions.extend([I::Push(Value::Function(entry)), I::CallValue(0)]);
+        } else {
+            instructions.push(I::Call(entry, 0));
+        }
+        instructions.extend([
+            I::IsType(ValueType::Error),
+            I::JumpIfTrue(5 + extra),
+            I::Push(Value::Int(sentinel)),
+            I::Pop,
+            I::Halt,
+            I::Push(Value::Int(1)),
+            I::MakeTuple(1),
+            I::Push(Value::Int(0)),
+            I::Push(Value::Int(2)),
+            I::IndexSet,
+            I::Return,
+        ]);
+        let mut program = callable(instructions, entry, 0, 0);
+        program.callables.get_mut(&entry).unwrap().result_type =
+            Some(RuntimeType::Tuple(vec![RuntimeType::Int]));
+        let mut bytes = bytecode::encode(&program).unwrap();
+        let decoded = bytecode::decode(&bytes).unwrap();
+        interpreter::run_with(&decoded, &mut Vec::new()).unwrap();
+
+        // Replace a reachable, same-height instruction in an otherwise valid
+        // artifact. Losing the tuple result would incorrectly prune this load.
+        program.instructions[3 + extra] = I::Load(99);
+        assert!(matches!(
+            interpreter::run_with(&program, &mut Vec::new()),
+            Err(cog::error::RuntimeError::InvalidLocal(99))
+        ));
+        rejected(program, "not initialized");
+        let mut pattern = vec![46, 0];
+        pattern.extend_from_slice(&sentinel.to_le_bytes());
+        let offset = bytes
+            .windows(pattern.len())
+            .position(|window| window == pattern)
+            .unwrap();
+        let mut invalid_load = vec![48];
+        invalid_load.extend_from_slice(&99u32.to_le_bytes());
+        bytes.splice(offset..offset + pattern.len(), invalid_load);
+        let error = bytecode::decode(&bytes).unwrap_err();
+        assert!(error.contains("not initialized"), "{error}");
+        assert!(bytecode::read(std::io::Cursor::new(&bytes)).is_err());
+    }
+}
+
+#[test]
+fn tuple_index_set_type_errors_remain_recoverable_by_typed_callees() {
+    use cog::value::RuntimeType;
+
+    for (replacement, expected) in [(Value::Int(2), false), (Value::Bool(true), true)] {
+        let mut program = callable(
+            vec![
+                I::Push(Value::Int(1)),
+                I::MakeTuple(1),
+                I::Push(Value::Int(0)),
+                I::Push(replacement),
+                I::IndexSet,
+                I::Call(12, 1),
+                I::Push(Value::Bool(expected)),
+                I::Eq,
+                I::JumpIfTrue(11),
+                I::Push(Value::Str("unexpected tuple update result".into())),
+                I::Crash(None),
+                I::Halt,
+                I::Store(0),
+                I::Load(0),
+                I::IsType(ValueType::Error),
+                I::Return,
+            ],
+            12,
+            1,
+            0,
+        );
+        program.callables.get_mut(&12).unwrap().parameter_types =
+            Some(vec![Some(RuntimeType::Tuple(vec![RuntimeType::Int]))]);
+        let decoded = bytecode::decode(&bytecode::encode(&program).unwrap()).unwrap();
+        interpreter::run_with(&decoded, &mut Vec::new()).unwrap();
+    }
 }
 
 #[test]

@@ -1,0 +1,9 @@
+include std;
+use io;
+
+fn main(args: str[]) -> nil {
+    io::println($"Received {len(args)} argument(s):")!!;
+    for index in 0..len(args) {
+        io::println($"args[{index}] = {args[index]}")!!;
+    }
+}

@@ -44,7 +44,58 @@ pub(super) fn parse(
     .deserialize(&mut deserializer)
     .map_err(parse_error)?;
     deserializer.end().map_err(parse_error)?;
+    validate_integer_tokens(text)?;
     Ok(value)
+}
+
+// Serde's f64 visitor also receives integer tokens outside u64/i64. Inspect
+// their original spelling after syntax validation so those tokens cannot be
+// silently rounded. This scan allocates nothing and ignores quoted strings.
+fn validate_integer_tokens(text: &str) -> Result<(), RuntimeError> {
+    let mut bytes = text.bytes().peekable();
+    while let Some(byte) = bytes.next() {
+        if byte == b'"' {
+            while let Some(byte) = bytes.next() {
+                match byte {
+                    b'\\' => {
+                        bytes.next();
+                    }
+                    b'"' => break,
+                    _ => {}
+                }
+            }
+        } else if byte == b'-' || byte.is_ascii_digit() {
+            let mut magnitude = u64::from(byte.saturating_sub(b'0'));
+            let negative = byte == b'-';
+            if negative {
+                magnitude = 0;
+            }
+            let mut overflow = false;
+            let mut fractional = false;
+            while let Some(&byte) = bytes.peek() {
+                if !(byte.is_ascii_digit() || matches!(byte, b'.' | b'e' | b'E' | b'+' | b'-')) {
+                    break;
+                }
+                bytes.next();
+                if byte.is_ascii_digit() {
+                    match magnitude
+                        .checked_mul(10)
+                        .and_then(|n| n.checked_add(u64::from(byte - b'0')))
+                    {
+                        Some(n) => magnitude = n,
+                        None => overflow = true,
+                    }
+                } else {
+                    fractional = true;
+                }
+            }
+            let limit = (i64::MAX as u64) + u64::from(negative);
+            if !fractional && (overflow || magnitude > limit) {
+                return Err(RuntimeError::Overflow);
+            }
+        }
+    }
+    Ok(())
 }
 
 pub(super) fn stringify(

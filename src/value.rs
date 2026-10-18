@@ -26,6 +26,25 @@ pub enum RuntimeType {
     Tuple(Vec<RuntimeType>),
 }
 
+/// Orders an exact signed integer against an f64 without first rounding the
+/// integer into floating-point. `None` represents NaN, like `partial_cmp`.
+pub(crate) fn compare_int_float(integer: i64, float: f64) -> Option<Ordering> {
+    if float.is_nan() {
+        return None;
+    }
+    if float >= 9223372036854775808.0 {
+        return Some(Ordering::Less);
+    }
+    if float < i64::MIN as f64 {
+        return Some(Ordering::Greater);
+    }
+    let truncated = float as i64;
+    match integer.cmp(&truncated) {
+        Ordering::Equal => (truncated as f64).partial_cmp(&float),
+        order => Some(order),
+    }
+}
+
 #[derive(Debug)]
 pub struct ArrayValue {
     values: RefCell<Vec<Value>>,

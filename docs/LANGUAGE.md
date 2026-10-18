@@ -602,6 +602,10 @@ The project entry point must include the standard package with
 `include std;` before source modules can import it. Use `use io;` for
 `io::println`, or `use io::println;` for bare `println`.
 `include` is a top-level declaration; prefixing it with `comptime` is an error.
+An executable may define `fn main()` or `fn main(args: str[])`; in the latter
+form, `run` supplies command-line arguments after `--`, excluding the executable
+name. No other `main` parameter signature is supported. `--restricted` denies
+access to `process::args()` and therefore to this argument list.
 `use math::{PI, max as larger};` and `use math::*;` are supported. Only `len` and
 `exclusive` are in the ordinary prelude. Imports can also be block-local.
 

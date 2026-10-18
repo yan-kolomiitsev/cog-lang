@@ -1878,3 +1878,29 @@ fn collection_12_arrays_of_tuples_keep_recursive_element_types() {
         "TypeMismatch\n3\nTypeMismatch\n5\n7\n",
     );
 }
+
+#[test]
+fn comptime_and_runtime_mixed_numeric_comparisons_agree() {
+    output(
+        r#"
+        comptime ABOVE_53 = 9007199254740993 > 9007199254740992.0;
+        comptime MAX_BELOW_2_63 = 9223372036854775807 < 9223372036854775808.0;
+        comptime MIN_EQUALS_FLOAT = (-9223372036854775807 - 1) == -9223372036854775808.0;
+        comptime NEGATIVE_RANGE = (-9223372036854775807 - 1) > -9223372036854777856.0;
+        comptime SIGNED_ZERO = -0.0 == 0;
+        fn main() {
+            io::println(ABOVE_53);
+            io::println(MAX_BELOW_2_63);
+            io::println(MIN_EQUALS_FLOAT);
+            io::println(NEGATIVE_RANGE);
+            io::println(SIGNED_ZERO);
+            io::println(9007199254740993 > 9007199254740992.0);
+            io::println(9223372036854775807 < 9223372036854775808.0);
+            io::println((-9223372036854775807 - 1) == -9223372036854775808.0);
+            io::println((-9223372036854775807 - 1) > -9223372036854777856.0);
+            io::println(-0.0 == 0);
+        }
+        "#,
+        "true\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\ntrue\n",
+    );
+}

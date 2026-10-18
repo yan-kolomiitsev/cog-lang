@@ -176,6 +176,11 @@ impl PluginCall<'_> {
         if view.kind != Type::Str as u32 {
             return Err(Error::new("expected str"));
         }
+        // ABI v1 permits null pointers for empty views. Rust slices require a
+        // non-null pointer even when their length is zero.
+        if view.bytes.len == 0 {
+            return Ok("");
+        }
         // Host roots inspected strings throughout this call; this reference
         // cannot outlive PluginCall. The ABI contract guarantees valid UTF-8.
         Ok(unsafe {
@@ -335,6 +340,62 @@ pub unsafe fn destroy_state<T>(state: *mut c_void) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn inspected_empty_strings_accept_null_byte_views() {
+        unsafe extern "C" fn inspect(
+            _: *mut c_void,
+            handle: Handle,
+            output: *mut ValueView,
+        ) -> Status {
+            let bytes = if handle == 0 {
+                Bytes {
+                    data: std::ptr::null(),
+                    len: 0,
+                }
+            } else {
+                Bytes::new("Cog λ".as_bytes())
+            };
+            unsafe {
+                output.write(ValueView {
+                    kind: Type::Str as u32,
+                    bytes,
+                    ..ValueView::default()
+                });
+            }
+            OK
+        }
+        unsafe extern "C" fn make(_: *mut c_void, _: *const ValueView, _: *mut Handle) -> Status {
+            INVALID
+        }
+        unsafe extern "C" fn get(_: *mut c_void, _: Handle, _: usize, _: *mut Handle) -> Status {
+            INVALID
+        }
+        unsafe extern "C" fn set(_: *mut c_void, _: Handle, _: usize, _: Handle) -> Status {
+            INVALID
+        }
+        unsafe extern "C" fn bytes(_: *mut c_void, _: Bytes) -> Status {
+            INVALID
+        }
+        let host = HostV1 {
+            size: size_of::<HostV1>() as u32,
+            version: VERSION,
+            inspect,
+            make,
+            array_get: get,
+            array_set: set,
+            write_output: bytes,
+            set_error: bytes,
+        };
+        let mut context = 0u8;
+        let call = PluginCall {
+            host: &host,
+            context: (&mut context as *mut u8).cast(),
+            arguments: &[],
+        };
+        assert_eq!(call.string(0).unwrap(), "");
+        assert_eq!(call.string(1).unwrap(), "Cog λ");
+    }
 
     #[test]
     fn rust_state_wrappers_contain_initialization_and_destruction_panics() {

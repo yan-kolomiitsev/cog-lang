@@ -404,6 +404,9 @@ impl<'a> RunContext<'a> {
         self.inner.limits = limits.runtime();
         self
     }
+    /// Set the arguments available to `process::args` and `fn main(args: str[])`.
+    /// The executable name is not included. A non-UTF-8 argument becomes a
+    /// recoverable conversion Error when Cog requests the string array.
     pub fn set_process_arguments(&mut self, arguments: Vec<std::ffi::OsString>) {
         self.inner.set_process_arguments(arguments);
     }

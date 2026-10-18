@@ -2246,8 +2246,12 @@ fn equal(left: &ComptimeValue, right: &ComptimeValue) -> bool {
     match (left, right) {
         (ComptimeValue::Int(a), ComptimeValue::Int(b)) => a == b,
         (ComptimeValue::Float(a), ComptimeValue::Float(b)) => a == b,
-        (ComptimeValue::Int(a), ComptimeValue::Float(b)) => (*a as f64) == *b,
-        (ComptimeValue::Float(a), ComptimeValue::Int(b)) => *a == (*b as f64),
+        (ComptimeValue::Int(a), ComptimeValue::Float(b)) => {
+            crate::value::compare_int_float(*a, *b) == Some(Ordering::Equal)
+        }
+        (ComptimeValue::Float(a), ComptimeValue::Int(b)) => {
+            crate::value::compare_int_float(*b, *a) == Some(Ordering::Equal)
+        }
         (ComptimeValue::Str(a), ComptimeValue::Str(b)) => a == b,
         (ComptimeValue::Bool(a), ComptimeValue::Bool(b)) => a == b,
         (ComptimeValue::Nil, ComptimeValue::Nil) => true,
@@ -2265,10 +2269,10 @@ fn compare(
         (ComptimeValue::Int(left), ComptimeValue::Int(right)) => Some(left.cmp(&right)),
         (ComptimeValue::Float(left), ComptimeValue::Float(right)) => left.partial_cmp(&right),
         (ComptimeValue::Int(left), ComptimeValue::Float(right)) => {
-            (left as f64).partial_cmp(&right)
+            crate::value::compare_int_float(left, right)
         }
         (ComptimeValue::Float(left), ComptimeValue::Int(right)) => {
-            left.partial_cmp(&(right as f64))
+            crate::value::compare_int_float(right, left).map(Ordering::reverse)
         }
         _ => return Err("comparison requires numeric comptime values".into()),
     };
@@ -2341,6 +2345,48 @@ mod tests {
             budget,
         };
         eval_expr(expr, values, &mut context, 0, 0)
+    }
+
+    #[test]
+    fn comptime_mixed_numeric_comparisons_cover_float_boundaries() {
+        use ComptimeValue::{Bool, Float, Int};
+        let i64_max = Int(i64::MAX);
+        let i64_min = Int(i64::MIN);
+        let upper = Float(9223372036854775808.0);
+        let lower = Float(-9223372036854775808.0);
+        let above_53 = Int(9007199254740993);
+        let exact_53 = Float(9007199254740992.0);
+
+        assert!(!equal(&i64_max, &upper));
+        assert!(equal(&i64_min, &lower));
+        assert!(!equal(&above_53, &exact_53));
+        assert!(equal(&Int(0), &Float(-0.0)));
+        assert!(!equal(&Int(1), &Float(f64::NAN)));
+        assert!(!equal(&Int(1), &Float(f64::INFINITY)));
+        assert!(!equal(&Int(1), &Float(f64::NEG_INFINITY)));
+
+        let evaluate =
+            |op, left, right| match eval_binary(op, left, right, &mut Budget::default()).unwrap() {
+                Bool(value) => value,
+                _ => panic!("comptime comparison did not return bool"),
+            };
+        assert!(evaluate(BinOp::Lt, i64_max.clone(), upper.clone()));
+        assert!(!evaluate(BinOp::Lt, upper, i64_max.clone()));
+        assert!(!evaluate(BinOp::Lt, i64_min.clone(), lower.clone()));
+        assert!(!evaluate(BinOp::Lt, above_53, exact_53));
+        for op in [BinOp::Lt, BinOp::Gt, BinOp::LtEq, BinOp::GtEq] {
+            assert!(!evaluate(op, Int(1), Float(f64::NAN)));
+        }
+        assert!(evaluate(BinOp::NotEq, Int(1), Float(f64::NAN)));
+        assert!(!evaluate(BinOp::Eq, Int(1), Float(f64::INFINITY)));
+        assert!(evaluate(BinOp::Lt, Int(1), Float(f64::INFINITY)));
+        assert!(evaluate(BinOp::LtEq, Int(1), Float(f64::INFINITY)));
+        assert!(!evaluate(BinOp::Gt, Int(1), Float(f64::INFINITY)));
+        assert!(!evaluate(BinOp::GtEq, Int(1), Float(f64::INFINITY)));
+        assert!(evaluate(BinOp::Gt, Int(1), Float(f64::NEG_INFINITY)));
+        assert!(evaluate(BinOp::GtEq, Int(1), Float(f64::NEG_INFINITY)));
+        assert!(!evaluate(BinOp::Lt, Int(1), Float(f64::NEG_INFINITY)));
+        assert!(!evaluate(BinOp::LtEq, Int(1), Float(f64::NEG_INFINITY)));
     }
 
     #[test]

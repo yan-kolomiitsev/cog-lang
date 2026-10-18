@@ -32,6 +32,9 @@ static FILE *open_marker(const char *path) { return fopen(path, "wb"); }
 #endif
 
 typedef struct { int64_t count; CogHandle saved; char *marker; } State;
+/* The current host packs a 52-bit generation and 12-bit slot into CogHandle.
+ * This ABI fixture treats tokens as opaque and deliberately does not decode
+ * that implementation detail. */
 static CogStatus create(void **output) {
     State *state = calloc(1, sizeof(State));
     if (!state) return COG_LIMIT;
@@ -65,6 +68,12 @@ static CogStatus invoke(void *pointer, const CogHostV1 *host, void *context,
     if (value.kind == COG_INT) {
         if (value.integer == 0) { *output = 0; return COG_OK; }
         if (value.integer == -1) { *output = state->saved; return COG_OK; }
+        if (value.integer == -4) {
+            CogValueView invalid = {0};
+            if (host->inspect(context, 0, &invalid) != COG_INVALID) return COG_FAILURE;
+            *output = arguments[0];
+            return COG_OK;
+        }
         if (value.integer == -2) {
             /* Expired handles must be rejected by host operations as well. */
             if (host->inspect(context, state->saved, &value) != COG_INVALID) return COG_FAILURE;

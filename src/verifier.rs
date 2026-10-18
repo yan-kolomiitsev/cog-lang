@@ -1639,7 +1639,11 @@ fn produced_flow(
             value,
             context.instruction_string_ids.get(pc).copied().flatten(),
         )),
-        Instruction::PushArray(_) => Some(FlowValue::normal(TYPE_ARRAY)),
+        Instruction::PushArray(template) => Some(match template {
+            ArrayTemplate::Scalar(value) => value_flow(value, None),
+            // Instantiation may produce Error for incompatible element types.
+            ArrayTemplate::Array(_) => recoverable(TYPE_ARRAY),
+        }),
         Instruction::Load(slot) => Some(flow_at(&state.local_values, *slot)),
         Instruction::LoadGlobal(slot) => Some(flow_at(&state.global_values, *slot)),
         Instruction::LoadCapture(index) => Some(
@@ -1730,7 +1734,8 @@ fn produced_flow(
         Instruction::CellGet => Some(FlowValue::UNKNOWN),
         Instruction::Index => Some(aggregate_index_flow(state, old_height)),
         Instruction::CellSet => Some(recoverable(TYPE_OTHER)),
-        Instruction::IndexSet => Some(recoverable(TYPE_ARRAY | TYPE_RECORD)),
+        // IndexSet returns the mutated container, including tuple-backed arrays.
+        Instruction::IndexSet => Some(recoverable(TYPE_ARRAY | TYPE_TUPLE | TYPE_RECORD)),
         Instruction::MakeRecord(count) => {
             // `record_constructor_flow` inspects each key to determine whether
             // the result is a record, variant, or recoverable Error. Charge

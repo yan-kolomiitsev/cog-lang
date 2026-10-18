@@ -28,6 +28,28 @@ fn numeric_literal_forms_run_through_the_vm() {
 }
 
 #[test]
+fn main_accepts_only_no_parameters_or_one_str_array_argument() {
+    let accepted = cog::project::compile_source("main.cog", "include std; fn main(args: str[]) {}");
+    assert!(accepted.is_ok(), "{accepted:?}");
+
+    for source in [
+        "include std; fn main(args: int[]) {}",
+        "include std; fn main(input: str[]) {}",
+        "include std; fn main(args: str, rest: str[]) {}",
+        "include std; fn main(args: str[] = [\"default\"]) {}",
+        "include std; fn main(args: str[]?) {}",
+    ] {
+        let error = cog::project::compile_source("main.cog", source).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("`main` must take no parameters or exactly `args: str[]`"),
+            "unexpected diagnostic for {source}: {error}"
+        );
+    }
+}
+
+#[test]
 fn continue_skips_to_the_next_while_and_for_iteration() {
     assert_eq!(
         run(r#"
@@ -860,5 +882,64 @@ fn error_return_from_a_condition_preserves_primary_error_during_cleanup() {
         fn main() { const e = work(); io::println(e.error_kind()); }
     "#),
         "nested\nremaining\nTypeMismatch\n"
+    );
+}
+
+#[test]
+fn mixed_numeric_comparisons_preserve_integer_precision() {
+    assert_eq!(
+        run(r#"
+        var check = 0;
+        fn require(value) { check += 1; if !value { crash(check); } }
+        fn main() {
+            const n = 9007199254740993;
+            const f = 9007199254740992.0;
+            require(n != f); require(f != n);
+            require(n > f); require(f < n);
+            require(n >= f); require(f <= n);
+            require(!(n == f)); require(!(f == n));
+            require(!(n <= f)); require(!(f >= n));
+            require(-n < -f); require(-f > -n);
+            const high = "9223372036854775807" as int;
+            const low = "-9223372036854775808" as int;
+            require(high < 9223372036854775808.0);
+            require(9223372036854775808.0 > high);
+            require(low == -9223372036854775808.0);
+            require(-9223372036854775808.0 == low);
+            require(low > -9223372036854777856.0);
+            require(0 == -0.0); require(-0.0 == 0);
+            require(1 > 0.5); require(-1 < -0.5);
+            require(1 < 1.5); require(-1 > -1.5);
+            const nan = "NaN" as float;
+            const inf = "inf" as float;
+            require(1 != nan); require(nan != 1);
+            require(!(1 == nan)); require(!(nan == 1));
+            require(!(1 < nan)); require(!(1 > nan));
+            require(!(1 <= nan)); require(!(1 >= nan));
+            require(!(nan < 1)); require(!(nan > 1));
+            require(!(nan <= 1)); require(!(nan >= 1));
+            require(1 < inf); require(1 <= inf); require(!(1 > inf)); require(!(1 >= inf));
+            require(1 > -inf); require(1 >= -inf); require(!(1 < -inf)); require(!(1 <= -inf));
+            require(high < inf); require(inf > high);
+            require(low > -inf); require(-inf < low);
+            io::println("exact");
+        }
+    "#),
+        "exact\n"
+    );
+}
+
+#[test]
+fn aggregate_equality_remains_a_recoverable_type_error() {
+    assert_eq!(
+        run(r#"
+        fn main() {
+            when [1] == [1] is Error::TypeMismatch(op) { io::println(op); }
+            else { crash("array equality unexpectedly succeeded"); }
+            when {x: 1} == {x: 1} is Error::TypeMismatch(op) { io::println(op); }
+            else { crash("record equality unexpectedly succeeded"); }
+        }
+    "#),
+        "eq\neq\n"
     );
 }

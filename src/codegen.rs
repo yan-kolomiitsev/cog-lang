@@ -1,6 +1,6 @@
 use crate::ast::{
     BinOp, Block, CallArgument, EnumVariant, Expr, FallbackKind, FunctionDecl, Item, MatchPattern,
-    Param, Program, Stmt, StringPart, UnOp, VarType, Visibility,
+    Param, Program, Stmt, StringPart, TypeKind, UnOp, VarType, Visibility,
 };
 use crate::backend::{CompiledProgram, Emitter, Label};
 use crate::builtins::Builtin;
@@ -265,6 +265,23 @@ pub fn compile(program: &Program) -> Result<CompiledProgram, CodegenError> {
     compile_with_modules(program, &HashMap::new())
 }
 
+fn is_main_arguments_parameter(parameters: &[Param]) -> bool {
+    let [parameter] = parameters else {
+        return false;
+    };
+    parameter.name == "args"
+        && parameter.default.is_none()
+        && parameter.ty.as_ref().is_some_and(|ty| {
+            !ty.nilable
+                && matches!(
+                    &ty.kind,
+                    TypeKind::Array(element)
+                        if !element.nilable
+                            && matches!(&element.kind, TypeKind::Primitive(VarType::Str))
+                )
+        })
+}
+
 /// Same as `compile`, but additionally receives the file/module ownership
 /// map supplied by callers. Functions are already renamed to their
 /// fully-qualified `module::name` labels before codegen; the map also records
@@ -453,8 +470,11 @@ pub fn compile_with_modules(
             "no entry point: expected a function named `main`",
         ));
     }
-    if !functions["main"].params.is_empty() {
-        return Err(CodegenError::new("`main` must take no parameters"));
+    let main_parameters = &functions["main"].params;
+    if !main_parameters.is_empty() && !is_main_arguments_parameter(main_parameters) {
+        return Err(CodegenError::new(
+            "`main` must take no parameters or exactly `args: str[]`",
+        ));
     }
 
     let mut cg = Codegen {
@@ -507,7 +527,12 @@ pub fn compile_with_modules(
             _ => {}
         }
     }
-    cg.out.call("main", 0);
+    if !main_parameters.is_empty() {
+        let arguments =
+            crate::runtime::NativeImport::named("process::args").map_err(CodegenError::new)?;
+        cg.out.call_native(arguments);
+    }
+    cg.out.call("main", main_parameters.len());
     cg.out.emit(Instruction::Halt);
     for item in &program.items {
         match item {

@@ -8,7 +8,10 @@ use std::ffi::c_void;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-const MAX_HANDLES: usize = 4096;
+const HANDLE_INDEX_BITS: u32 = 12;
+const MAX_HANDLES: usize = 1 << HANDLE_INDEX_BITS;
+const MAX_PLUGIN_ARGUMENTS: usize = 64;
+const MAX_CALL_ID: u64 = u64::MAX >> HANDLE_INDEX_BITS;
 const MAX_METADATA_BYTES: usize = 1024 * 1024;
 fn failure(message: impl Into<String>) -> Error {
     Error::at(ErrorKind::Native, message)
@@ -118,7 +121,7 @@ impl PluginManifest {
                                 return Err(failure("invalid function metadata"));
                             }
                             match child.name().value() {
-                                "param" if signature.parameters.len() < 64 => {
+                                "param" if signature.parameters.len() < MAX_PLUGIN_ARGUMENTS => {
                                     signature.parameters.push(Type::from_name(
                                         child
                                             .get(0)
@@ -190,8 +193,9 @@ impl PluginManifest {
         *engine = next;
         Ok(())
     }
-    /// Load the library only after checking its complete descriptor against this
-    /// manifest. The library initializer runs when the OS loads it.
+    /// Load the library, then check its complete descriptor against this manifest
+    /// before registering callbacks. OS library initializers run during loading,
+    /// before the descriptor can be checked. Only load trusted native code.
     ///
     /// # Safety
     /// This executes trusted native code with process authority. The library and
@@ -297,14 +301,14 @@ unsafe fn load(
         let name = std::str::from_utf8(unsafe { view(function.name, 256)? })
             .map_err(|e| failure(e.to_string()))?
             .to_owned();
-        let parameters = unsafe { view(function.parameters, 64)? }
+        let parameters = unsafe { view(function.parameters, MAX_PLUGIN_ARGUMENTS)? }
             .iter()
             .map(|tag| Type::from_tag(*tag))
             .collect::<Result<Vec<_>, _>>()?;
         let signature = Signature::new(parameters, Type::from_tag(function.result)?)
             .with_effects(Effects::from_bits(function.effects)?)
             .with_mutating_parameters(
-                (0..64)
+                (0..MAX_PLUGIN_ARGUMENTS)
                     .filter(|index| function.mutations & (1u64 << index) != 0)
                     .collect(),
             );
@@ -356,30 +360,37 @@ unsafe fn load(
     Ok(())
 }
 
-thread_local! { static NEXT_CALL: Cell<u32> = const { Cell::new(1) }; }
-fn next_call_id() -> Result<u32, Error> {
+thread_local! { static NEXT_CALL: Cell<u64> = const { Cell::new(1) }; }
+fn next_call_id() -> Result<u64, Error> {
     NEXT_CALL.with(|next| {
         let id = next.get();
         if id == 0 {
             return Err(failure("native call generation exhausted"));
         }
-        next.set(id.checked_add(1).unwrap_or(0));
+        next.set(if id == MAX_CALL_ID { 0 } else { id + 1 });
         Ok(id)
     })
 }
+fn check_argument_count(count: usize) -> Result<(), Error> {
+    if count > MAX_PLUGIN_ARGUMENTS {
+        Err(failure("native plugin argument limit exceeded"))
+    } else {
+        Ok(())
+    }
+}
 struct Frame<'a, 'b, 'c> {
     context: &'a mut NativeContext<'b, 'c>,
-    id: u32,
+    id: u64,
     values: Vec<Value>,
     error: Option<String>,
     remaining_bytes: usize,
 }
 impl Frame<'_, '_, '_> {
     fn get(&self, handle: Handle) -> Result<&Value, Status> {
-        if (handle >> 32) as u32 != self.id {
+        if (handle >> HANDLE_INDEX_BITS) != self.id {
             return Err(abi::INVALID);
         }
-        let index = (handle as u32).checked_sub(1).ok_or(abi::INVALID)? as usize;
+        let index = (handle & (MAX_HANDLES as u64 - 1)) as usize;
         self.values.get(index).ok_or(abi::INVALID)
     }
     fn push(&mut self, value: Value) -> Result<Handle, Status> {
@@ -388,7 +399,7 @@ impl Frame<'_, '_, '_> {
         }
         self.values.try_reserve(1).map_err(|_| abi::LIMIT)?;
         self.values.push(value);
-        Ok(((self.id as u64) << 32) | self.values.len() as u64)
+        Ok((self.id << HANDLE_INDEX_BITS) | (self.values.len() - 1) as u64)
     }
     fn charge(&mut self, bytes: usize) -> Result<(), Status> {
         self.remaining_bytes = self.remaining_bytes.checked_sub(bytes).ok_or(abi::LIMIT)?;
@@ -411,7 +422,8 @@ fn call(
         error: None,
         remaining_bytes,
     };
-    let mut handles = [0; 64];
+    check_argument_count(arguments.len())?;
+    let mut handles = [0; MAX_PLUGIN_ARGUMENTS];
     for (index, value) in arguments.iter().enumerate() {
         handles[index] = frame
             .push(value.clone())
@@ -631,9 +643,72 @@ mod tests {
     use super::*;
 
     #[test]
+    fn opaque_handles_cover_the_full_budget_and_expire_across_calls() {
+        let mut output = Vec::new();
+        let mut runtime = crate::runtime::RuntimeContext::new(
+            &mut output,
+            crate::runtime::VmCapabilities::default(),
+        );
+        let mut context = NativeContext {
+            inner: &mut runtime,
+        };
+        let mut frame = Frame {
+            context: &mut context,
+            id: u64::from(u32::MAX),
+            values: Vec::new(),
+            error: None,
+            remaining_bytes: usize::MAX,
+        };
+        for index in 0..MAX_PLUGIN_ARGUMENTS {
+            let handle = frame.push(Value::int(index as i64)).unwrap();
+            assert!(
+                matches!(frame.get(handle).unwrap().0, VmValue::Int(value) if value == index as i64)
+            );
+        }
+        let result = frame.push(Value::int(MAX_PLUGIN_ARGUMENTS as i64)).unwrap();
+        assert!(
+            matches!(frame.get(result).unwrap().0, VmValue::Int(value) if value == MAX_PLUGIN_ARGUMENTS as i64)
+        );
+        frame.values.clear();
+
+        let handles = (0..MAX_HANDLES)
+            .map(|index| frame.push(Value::int(index as i64)).unwrap())
+            .collect::<Vec<_>>();
+        for (index, &handle) in handles.iter().enumerate() {
+            assert_ne!(handle, 0);
+            assert!(
+                matches!(frame.get(handle).unwrap().0, VmValue::Int(value) if value == index as i64)
+            );
+        }
+        assert_eq!(frame.push(Value::int(0)), Err(abi::LIMIT));
+        assert!(frame.get(0).is_err());
+        frame.id += 1;
+        assert!(handles.iter().all(|&handle| frame.get(handle).is_err()));
+        let last = (MAX_CALL_ID << HANDLE_INDEX_BITS) | (MAX_HANDLES as u64 - 1);
+        frame.id = MAX_CALL_ID;
+        assert!(
+            matches!(frame.get(last).unwrap().0, VmValue::Int(value) if value == (MAX_HANDLES - 1) as i64)
+        );
+    }
+
+    #[test]
+    fn call_generations_continue_past_the_old_u32_boundary() {
+        let previous = NEXT_CALL.with(|next| next.replace(u64::from(u32::MAX)));
+        assert_eq!(next_call_id().unwrap(), u64::from(u32::MAX));
+        assert_eq!(next_call_id().unwrap(), u64::from(u32::MAX) + 1);
+        NEXT_CALL.with(|next| next.set(previous));
+    }
+
+    #[test]
+    fn plugin_argument_limit_matches_the_fixed_handle_array() {
+        assert!(check_argument_count(MAX_PLUGIN_ARGUMENTS).is_ok());
+        assert!(check_argument_count(MAX_PLUGIN_ARGUMENTS + 1).is_err());
+    }
+
+    #[test]
     fn call_generations_remain_exhausted_without_wrapping() {
-        let previous = NEXT_CALL.with(|next| next.replace(u32::MAX));
-        assert_eq!(next_call_id().unwrap(), u32::MAX);
+        let previous = NEXT_CALL.with(|next| next.replace(MAX_CALL_ID));
+        assert_eq!(next_call_id().unwrap(), MAX_CALL_ID);
         assert!(next_call_id().is_err());
         assert!(next_call_id().is_err());
         NEXT_CALL.with(|next| next.set(previous));

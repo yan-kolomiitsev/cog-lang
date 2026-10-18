@@ -38,6 +38,23 @@ fingerprint (name, ABI version, parameter/result types, effects and mutation
 indices). This identifies a contract; it provides no publisher authentication.
 Locally built unsigned artifacts remain supported.
 
+An executable may declare `fn main(args: str[])`. The CLI passes arguments after
+`--`; an embedder can set the same list on `RunContext` before execution. Supply
+only program arguments, without the executable name:
+
+```rust
+use cog::sdk::RunContext;
+use std::ffi::OsString;
+
+let mut output = Vec::new();
+let mut context = RunContext::new(&mut output);
+context.set_process_arguments(vec![OsString::from("input.txt")]);
+program.run_in(&mut context)?;
+```
+
+Cog strings require UTF-8. A non-UTF-8 OS argument is returned through the normal
+recoverable Error path when `process::args()` is evaluated.
+
 Register names as `module::function` with ASCII identifiers. Standard-library
 modules are reserved. Each function accepts at most 64 positional parameters.
 `Signature::with_mutating_parameters` takes strictly increasing argument indices;
@@ -104,12 +121,15 @@ function "host::double" result="int" { param "int"; }
 function "host::fail" result="nil"
 ```
 
-Library paths are relative to the manifest file; use `.dylib` on macOS and `.dll`
-on Windows. Function children accept `param "type"`, `effect "name"`, and
+Library paths are relative to the manifest file; parent components such as `../`
+are allowed. The manifest is not a filesystem sandbox. Use `.dylib` on macOS and
+`.dll` on Windows. Function children accept `param "type"`, `effect "name"`, and
 `mutates 0` nodes. Effects are `output`, `input`, `fs_read`, `fs_write`, `process`,
 `process_info`, `clock`, `sleep`, `entropy`. Unknown/duplicate metadata, unsupported
 versions, excessive arity, oversized/deep manifests and descriptor mismatches are
-rejected. A library's descriptor must match the manifest's entire function set.
+rejected. A library's descriptor must match the manifest's entire function set. The OS loads
+the library and runs its initializers before this descriptor can be inspected;
+only load native code you trust.
 Only `run` loads the library; `check` and `build` use its metadata without loading
 it, including when the library is missing. Deployment must provide matching
 manifests/libraries explicitly; source-free bytecode does not bundle native code.
@@ -167,9 +187,13 @@ errors, panic containment, resource invalidation and library/state lifetime.
   string views are valid only until return, on the calling thread. All host
   functions are synchronous. Retain copies in plugin-owned memory if needed.
   Opaque handles have per-call generations and are rejected in other calls;
-  they are not addresses. At most 4096 values are rooted per call; new string/array
-  data consumes the configured buffer budget. Call-generation exhaustion fails
-  without wrapping. Arbitrary nested/opaque Cog values can be forwarded unchanged.
+  they are not addresses. In the current host's `uint64_t` representation, bits
+  63..12 hold a 52-bit generation and bits 11..0 hold a zero-based slot index.
+  This layout is opaque: plugins must not decode, construct, persist, or reuse
+  tokens. At most 4096 values are rooted per call; new string/array data consumes
+  the configured buffer budget. Generations use 52 bits per thread; exhaustion
+  after `2^52 - 1` calls fails without wrapping so expired handles cannot revive.
+  Arbitrary nested/opaque Cog values can be forwarded unchanged.
 - `inspect` supports primitives, strings and array length; other values are opaque
   (Errors have a separate kind). `make` supports nil/int/float/bool/string/array;
   array access/mutation is checked. No VM internals or Rust layouts are exposed.

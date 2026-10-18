@@ -163,7 +163,7 @@ pub(super) fn run(context: &mut RuntimeContext<'_>, args: &[Value]) -> Result<Va
     let program = string(&args[0]);
     let mut command = Command::new(program);
     command.args(arguments.iter().map(string));
-    capture(context, command, program, "process::run")
+    capture(context, command, "process::run")
 }
 
 pub(super) fn shell(
@@ -180,7 +180,7 @@ pub(super) fn shell(
         let script = string(&args[0]);
         let mut command = Command::new("/bin/sh");
         command.arg("-c").arg(script);
-        capture(context, command, script, "process::shell")
+        capture(context, command, "process::shell")
     }
     #[cfg(not(unix))]
     {
@@ -307,7 +307,6 @@ fn read_capped(mut input: impl Read, limit: usize) -> Result<Vec<u8>, CaptureErr
 fn capture(
     context: &RuntimeContext<'_>,
     mut command: Command,
-    name: &str,
     op: &'static str,
 ) -> Result<Value, RuntimeError> {
     let mut child = OwnedChild(
@@ -316,51 +315,44 @@ fn capture(
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .map_err(|_| RuntimeError::ProcessFailed {
-                command: name.into(),
-                code: None,
-            })?,
+            .map_err(|error| io_error(op, error))?,
     );
     let stdout = child.0.stdout.take().unwrap();
     let stderr = child.0.stderr.take().unwrap();
     let limit = context.limits.buffer_limit();
-    let outputs = std::thread::scope(|scope| {
-        let (sender, receiver) = std::sync::mpsc::channel();
-        let first_sender = sender.clone();
-        let first = std::thread::Builder::new().spawn_scoped(scope, move || {
-            let _ = first_sender.send((0, read_capped(stdout, limit)));
-        });
-        if let Err(error) = first {
-            let _ = child.0.kill();
-            return Err(io_error(op, error));
-        }
-        let second = std::thread::Builder::new().spawn_scoped(scope, move || {
-            let _ = sender.send((1, read_capped(stderr, limit)));
-        });
-        if let Err(error) = second {
-            let _ = child.0.kill();
-            return Err(io_error(op, error));
-        }
-        let mut outputs = [Vec::new(), Vec::new()];
-        let mut failure = None;
-        for _ in 0..2 {
-            match receiver.recv() {
-                Ok((index, Ok(bytes))) => outputs[index] = bytes,
-                result => {
-                    let _ = child.0.kill();
-                    let _ = child.0.wait();
-                    failure.get_or_insert(match result {
-                        Ok((_, Err(CaptureError::Limit))) => RuntimeError::ResourceLimit {
-                            resource: "process output",
-                        },
-                        Ok((_, Err(CaptureError::Io(error)))) => io_error(op, error),
-                        _ => io_error(op, io::Error::other("process capture reader disconnected")),
-                    });
-                }
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let first_sender = sender.clone();
+    if let Err(error) = std::thread::Builder::new().spawn(move || {
+        let _ = first_sender.send((0, read_capped(stdout, limit)));
+    }) {
+        let _ = child.0.kill();
+        return Err(io_error(op, error));
+    }
+    if let Err(error) = std::thread::Builder::new().spawn(move || {
+        let _ = sender.send((1, read_capped(stderr, limit)));
+    }) {
+        let _ = child.0.kill();
+        return Err(io_error(op, error));
+    }
+    let mut outputs = [Vec::new(), Vec::new()];
+    for _ in 0..2 {
+        let (index, result) = receiver
+            .recv()
+            .map_err(|_| io_error(op, io::Error::other("process capture reader disconnected")))?;
+        match result {
+            Ok(bytes) => outputs[index] = bytes,
+            Err(CaptureError::Limit) => {
+                let _ = child.0.kill();
+                return Err(RuntimeError::ResourceLimit {
+                    resource: "process output",
+                });
+            }
+            Err(CaptureError::Io(error)) => {
+                let _ = child.0.kill();
+                return Err(io_error(op, error));
             }
         }
-        failure.map_or(Ok(outputs), Err)
-    })?;
+    }
     let status = child.0.wait().map_err(|error| io_error(op, error))?;
     let [stdout, stderr] = outputs;
     let fields = HashMap::from([

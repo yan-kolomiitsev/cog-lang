@@ -25,6 +25,7 @@ struct Options {
     locked: bool,
     output: Option<PathBuf>,
     program_args: Vec<OsString>,
+    program_args_separator: bool,
     plugins: Vec<PathBuf>,
 }
 
@@ -43,6 +44,7 @@ fn command(color: &mut Color) -> Result<(), String> {
     let mut args = std::env::args_os().skip(1).peekable();
     while let Some(argument) = args.next() {
         if argument == OsStr::new("--") {
+            options.program_args_separator = true;
             options.program_args = args.collect();
             break;
         }
@@ -90,7 +92,7 @@ fn command(color: &mut Color) -> Result<(), String> {
         return Err("expected a command or a source/bytecode path".into());
     }
     let action = action.as_deref().unwrap_or("run");
-    if !options.program_args.is_empty() && action != "run" {
+    if options.program_args_separator && action != "run" {
         return Err("program arguments after `--` are only valid with `run`".into());
     }
     if options.output.is_some() && action != "build" {

@@ -140,7 +140,8 @@ indistinguishable from an empty array through first/last alone; use is_empty whe
 that distinction matters. Slice accepts an empty range at the end; negative or
 out-of-bounds ranges produce InvalidArgument rather than clamping.
 
-`index_of` and `contains` use Cog's `==`: numeric int/float comparisons work,
+`index_of` and `contains` use Cog's `==`: mixed int/float comparisons compare
+the exact integer with the floating value without rounding the integer first,
 different normal types compare unequal, and equality between arrays or records is
 not implemented and can produce TypeMismatch. Search propagates an Error argument
 or an Error encountered before a match. First/last return the selected element,
@@ -259,7 +260,8 @@ The native `json` module provides `json::parse(text)` and
 `json::stringify(value)`. Parsing maps JSON `null` to `nil`, booleans and strings
 to their Cog counterparts, signed 64-bit integer tokens to `int`, and finite
 fractional/exponent tokens to `float`. Integer tokens outside the `int` range
-produce `Error::Overflow` instead of silently losing precision. JSON arrays
+produce `Error::Overflow` instead of silently losing precision. The JSON token
+`-0` is kept as floating negative zero to preserve its sign. JSON arrays
 become mutable heterogeneous Cog arrays; objects become records with string
 field names. Duplicate object names are rejected as `Error::ParseFailure`. Decimal
 numbers are represented by IEEE 754 `float` values; integers outside `int` range
@@ -361,7 +363,9 @@ Overflow. Integer rounding preserves int inputs without converting them to float
 and a non-int exponent produces TypeMismatch. Its result has the base's numeric type,
 including exponent zero; `pow(0, 0)` is 1. Square root and logarithms preserve NaN and
 positive infinity. Their finite calculations cover very small and very large inputs,
-including subnormal floats. Logarithm domain errors identify the `math::ln` operation.
+including subnormal floats. Logarithm domain errors identify the `math::ln` operation. Logarithms are
+approximations; even exact powers can differ from an integer by floating-point
+rounding. `abs` normalizes floating negative zero to positive zero.
 
 Random uses a 31-bit pseudorandom generator seeded once from OS entropy. `next()`
 returns an int in `[0, 2147483648)`; `boolean()` returns bool. `range(lo, hi)` takes
@@ -549,13 +553,19 @@ the process that launched it.
 
 Process results contain `exit_code` (int, or nil after signal termination), `success`
 (bool), `stdout`, and `stderr` (byte buffers). A nonzero exit is a normal result;
-spawn/capture/wait failure is Error. Decode output explicitly with `bytes::to_str`.
+spawn/capture/wait failure is `Error::IoFailure(op, message)` with the OS cause.
+Output exceeding the configured cap produces `Error::ResourceLimit`. Shell
+script text is not included in host-generated launch errors. Decode output
+explicitly with `bytes::to_str`.
 
 Run is synchronous, with null stdin and inherited cwd/environment. The argument
 array is validated before spawn. Output streams are captured concurrently, with
 a separate buffer limit for each. On capture failure/limit, the direct child is
-killed and reaped. Descendants retaining pipes may delay EOF. Timeout, cancellation,
-process groups, streaming capture, and launch options are not implemented.
+killed and reaped without joining the other reader. A descendant retaining that
+pipe can keep the detached reader thread and pipe open until the descendant exits.
+On successful capture, descendants retaining pipes may delay EOF indefinitely.
+Timeouts, process-tree termination, streaming capture, and launch options are not
+implemented.
 
 ## Error names
 

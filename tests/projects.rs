@@ -998,6 +998,42 @@ fn process_args_and_environment_are_available_to_cli_programs() {
     assert_eq!(output.stdout, b"args-env-ok\n");
 }
 
+#[test]
+fn main_argument_parameter_receives_cli_arguments_after_double_dash() {
+    let f = Fixture::new();
+    f.write(
+        "main.cog",
+        r#"
+        use io;
+        fn main(args: str[]) {
+            io::println(args.len())!!;
+            for argument in args { io::println(argument)!!; }
+        }
+        "#,
+    );
+
+    let output = f.cli("run", &["--", "two words", "é"]);
+    success(&output);
+    assert_eq!(output.stdout, "2\ntwo words\né\n".as_bytes());
+
+    let empty = f.cli("run", &["--"]);
+    success(&empty);
+    assert_eq!(empty.stdout, b"0\n");
+}
+
+#[test]
+fn empty_program_argument_separator_is_only_valid_for_run() {
+    let f = Fixture::new();
+    f.write("main.cog", "fn main() {}\n");
+
+    let output = f.cli("check", &["--"]);
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("program arguments after `--` are only valid with `run`")
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn process_environment_rejects_non_utf8_values_as_runtime_errors() {

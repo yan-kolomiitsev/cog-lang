@@ -28,19 +28,21 @@ not a release schedule. See the [language reference](docs/LANGUAGE.md),
   APIs, byte streams, and Cog implementations of common search, sort, string,
   and encoding utilities.
 - A tutorial and CI/fuzz infrastructure. Short fuzz smoke runs and local Linux
-  validation have been recorded; they do not satisfy the release-duration or
-  cross-platform gates.
+  validation have been recorded; sustained fuzz campaigns remain outstanding.
+  CI covers Linux x86_64, Windows x86_64, and macOS arm64 on Rust 1.95 and stable.
+- A Rust SDK for embedding and native registration, plus CLI plugins across a
+  versioned C ABI v1 with call-scoped handles and retained library lifetimes.
 
 ## Before the first Beta release
 
 - Complete static bytecode value-flow checks while preserving dynamic type
   failures as recoverable `Error` values.
-- Deliver a public Rust native SDK for embedding Cog and writing CLI plugins.
-  Dynamic plugins cross a versioned C ABI; the Rust ABI is not a plugin boundary.
+- Finish the contract review of the Rust native SDK and CLI plugin interface,
+  including ownership, error paths, panic containment, and library lifetimes.
 - Complete the broader compiler/runtime resource audit. Keep ordinary host
   authority and runtime limits optional; do not claim whole-process memory
   isolation.
-- Run the agreed sanitizer/fuzz campaigns, validate Linux x86_64, Windows
+- Run the agreed sanitizer/fuzz campaigns and validate the final revision on Linux x86_64, Windows
   x86_64, and macOS arm64 with Rust 1.95 and stable, and verify clean packaging
   and installation.
 - Close release-blocking defects and document remaining limitations before

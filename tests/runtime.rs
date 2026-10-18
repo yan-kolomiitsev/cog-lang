@@ -1132,7 +1132,7 @@ fn process_run_keeps_arguments_literal_and_reports_spawn_failure_as_error() {
             require(bytes::len(child.stderr) == 0);
             const no_arguments: str[] = [];
             try { process::run("/cog/nonexistent/executable", no_arguments); crash("spawn error ignored"); }
-            catch(e) { match e { Error::ProcessFailed(command, code) => { require(command == "/cog/nonexistent/executable"); require(code == nil); }, _ => { crash("wrong error"); } } }
+            catch(e) { match e { Error::IoFailure(op, message) => { require(op == "process::run"); require(message != ""); }, _ => { crash("wrong error"); } } }
         }
     "#,
     );
@@ -1379,4 +1379,91 @@ fn failed_buffered_close_invalidates_the_handle_and_is_catchable() {
     "#,
     );
     interpreter::run_with(&program, &mut Vec::new()).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn process_spawn_errors_preserve_os_causes() {
+    use std::os::unix::fs::PermissionsExt;
+    let file = TempFile::new();
+    std::fs::write(&file.0, "not executable").unwrap();
+    std::fs::set_permissions(&file.0, std::fs::Permissions::from_mode(0o600)).unwrap();
+    let missing = file.0.with_extension("missing");
+    let mut output = Vec::new();
+    let mut context = RuntimeContext::new(&mut output, VmCapabilities::default());
+    let run = NativeImport::named("process::run").unwrap();
+    let arguments = Value::Array(cog::heap::HeapRef::new(
+        cog::value::ArrayValue::typed(vec![], cog::value::RuntimeType::Str).unwrap(),
+    ));
+    let mut messages = Vec::new();
+    for path in [&missing, &file.0] {
+        let expected = std::process::Command::new(path).output().unwrap_err();
+        let result = run.call(
+            &mut context,
+            &[Value::Str(path.to_str().unwrap().into()), arguments.clone()],
+        );
+        match result {
+            Err(RuntimeError::IoFailure {
+                op: "process::run",
+                message,
+            }) => {
+                assert_eq!(message, expected.to_string());
+                messages.push(message);
+            }
+            result => panic!("OS cause was lost: {result:?}"),
+        }
+    }
+    assert_ne!(messages[0], messages[1]);
+    context.finish().unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn shell_launch_errors_do_not_expose_script_contents() {
+    let mut output = Vec::new();
+    let mut context = RuntimeContext::new(&mut output, VmCapabilities::default());
+    let shell = NativeImport::named("process::shell").unwrap();
+    // NUL makes spawn fail before a shell can run this script.
+    let result = shell.call(
+        &mut context,
+        &[Value::Str("secret-script-marker\0secret-password".into())],
+    );
+    match result {
+        Err(RuntimeError::IoFailure {
+            op: "process::shell",
+            message,
+        }) => {
+            assert!(!message.is_empty());
+            assert!(!message.contains("secret-script-marker"));
+            assert!(!message.contains("secret-password"));
+        }
+        result => panic!("unexpected launch result: {result:?}"),
+    }
+    context.finish().unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn process_output_limit_does_not_wait_for_a_descendant_holding_the_other_pipe() {
+    let mut output = Vec::new();
+    let mut context = RuntimeContext::new(&mut output, VmCapabilities::default());
+    context.limits.max_buffer_bytes = Some(1);
+    let shell = NativeImport::named("process::shell").unwrap();
+    let start = std::time::Instant::now();
+    let result = shell.call(
+        &mut context,
+        &[Value::Str("sleep 3 >/dev/null & printf xx; wait".into())],
+    );
+    assert!(matches!(
+        result,
+        Err(RuntimeError::ResourceLimit {
+            resource: "process output"
+        })
+    ));
+    assert!(
+        start.elapsed() < std::time::Duration::from_secs(2),
+        "capture waited for the descendant: {:?}",
+        start.elapsed()
+    );
+    context.finish().unwrap();
 }

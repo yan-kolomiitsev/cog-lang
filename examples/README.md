@@ -5,6 +5,7 @@ replace `cog` with `cargo run --locked --offline --bin cog --`.
 
 ```sh
 cog run examples/hello.cog
+cog run examples/command_line_args.cog -- first "two words"
 cog run examples/functions.cog
 cog run examples/comptime_factorial.cog
 cog run examples/comptime_types.cog
@@ -27,6 +28,7 @@ the repository and starts empty.
 | Example | What it demonstrates |
 | --- | --- |
 | [hello.cog](hello.cog) | Imports, main, output, and explicit I/O propagation |
+| [command_line_args.cog](command_line_args.cog) | `main(args: str[])` and forwarding arguments after `--` |
 | [bindings.cog](bindings.cog) | const/var, normal types, reassignment, and interpolation |
 | [functions.cog](functions.cog) | Tails, defaults, named arguments, structs, enum constructors, and trailing commas |
 | [comptime_factorial.cog](comptime_factorial.cog) | Compile-time functions, recursion, and a materialized scalar constant |

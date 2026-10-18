@@ -113,6 +113,27 @@ fn deterministic_learning_examples_execute_after_bytecode_round_trip() {
 }
 
 #[test]
+fn command_line_args_example_receives_arguments_after_bytecode_round_trip() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("examples")
+        .join("command_line_args.cog");
+    let source = std::fs::read_to_string(path).unwrap();
+    let artifact = project::compile_source("command_line_args.cog", &source).unwrap();
+    let artifact = bytecode::decode(&bytecode::encode(&artifact).unwrap()).unwrap();
+    let mut output = Vec::new();
+    let mut context = RuntimeContext::new(&mut output, VmCapabilities::default());
+    context.set_process_arguments(vec!["first".into(), "two words".into()]);
+
+    interpreter::run_with_context(&artifact, &mut context).unwrap();
+
+    drop(context);
+    assert_eq!(
+        String::from_utf8(output).unwrap(),
+        "Received 2 argument(s):\nargs[0] = first\nargs[1] = two words\n"
+    );
+}
+
+#[test]
 fn learning_examples_propagate_denied_output() {
     for name in [
         "collections.cog",

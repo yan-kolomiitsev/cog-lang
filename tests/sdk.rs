@@ -1,4 +1,4 @@
-use cog::sdk::{Engine, Signature, Type, Value};
+use cog::sdk::{Engine, RunContext, Signature, Type, Value};
 
 #[test]
 fn registered_callbacks_round_trip_and_outlive_the_engine() {
@@ -22,6 +22,25 @@ fn registered_callbacks_round_trip_and_outlive_the_engine() {
     let mut output = Vec::new();
     program.run(&mut output).unwrap();
     assert_eq!(output, b"42\n");
+}
+
+#[test]
+fn run_context_supplies_arguments_to_the_typed_main_entry_point() {
+    let engine = Engine::new();
+    let program = engine
+        .compile(
+            "sdk-args.cog",
+            "include std; use io; fn main(args: str[]) { io::println(args[0]); }",
+        )
+        .unwrap();
+    let mut output = Vec::new();
+    let mut context = RunContext::new(&mut output);
+    context.set_process_arguments(vec![std::ffi::OsString::from("two words")]);
+
+    program.run_in(&mut context).unwrap();
+    drop(context);
+
+    assert_eq!(output, b"two words\n");
 }
 
 #[test]

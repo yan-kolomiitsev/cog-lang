@@ -1080,3 +1080,68 @@ fn json_decoded_arrays_remain_heterogeneous_and_mutable() {
         "[\"one\",\"two\",null,false]\n"
     );
 }
+
+#[test]
+fn json_integer_tokens_never_fall_back_to_rounded_floats() {
+    assert_eq!(
+        run(r#"
+        use json;
+        fn overflow(text: str) {
+            when json::parse(text) is Error::Overflow {} else { crash(text); }
+        }
+        fn main() {
+            overflow("18446744073709551616");
+            overflow("-9223372036854775809");
+            overflow("[184467440737095516160000000000000000000]");
+            overflow("{\"n\":-9223372036854775809}");
+            when json::parse("1e400") is Error::Overflow { io::println("float overflow"); }
+            else { crash("non-finite JSON float was accepted"); }
+            io::println(json::parse("-0")!!);
+            io::println(json::stringify(json::parse("{\"$serde_json::private::Number\":\"18446744073709551616\"}")!!)!!);
+            io::println(json::parse("9223372036854775807")!!);
+            io::println(json::parse("-9223372036854775808")!!);
+            io::println(when json::parse("18446744073709551616.0")!! is float { true } else { false });
+            io::println(when json::parse("18446744073709551616e0")!! is float { true } else { false });
+            io::println(json::parse("\"18446744073709551616\"")!!);
+            io::println(json::stringify(json::parse("{\"18446744073709551616\":true}")!!)!! == "{\"18446744073709551616\":true}");
+        }
+    "#),
+        "float overflow\n-0\n{\"$serde_json::private::Number\":\"18446744073709551616\"}\n9223372036854775807\n-9223372036854775808\ntrue\ntrue\n18446744073709551616\ntrue\n"
+    );
+}
+
+#[test]
+fn math_abs_normalizes_negative_floating_zero() {
+    assert_eq!(
+        run(r#"
+        fn main() {
+            io::println(math::abs(-0.0)!!);
+            io::println(when math::abs(0.0)!! is float { true } else { false });
+            io::println(when math::abs(0)!! is int { true } else { false });
+            io::println(math::abs(-3)!!);
+        }
+    "#),
+        "0\ntrue\ntrue\n3\n"
+    );
+}
+
+#[test]
+fn derived_logarithms_are_approximate_at_exact_powers() {
+    let output = run(r#"
+        fn main() {
+            io::println(math::log10(1000)!!);
+            io::println(math::log2(1024)!!);
+        }
+    "#);
+    let actual = output
+        .lines()
+        .map(|line| line.parse::<f64>().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(actual.len(), 2);
+    for (actual, expected) in actual.into_iter().zip([3.0, 10.0]) {
+        assert!(
+            (actual - expected).abs() <= 1e-12,
+            "{actual} versus {expected}"
+        );
+    }
+}

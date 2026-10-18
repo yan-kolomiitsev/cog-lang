@@ -235,7 +235,7 @@ fn c_plugin_validates_handles_and_pins_state_and_library_until_program_drops() {
     let mut engine = Engine::new();
     unsafe { engine.load_plugin(&library) }.unwrap();
     let source = format!(
-        "include std; use io; use host; use err; fn main() {{ host::probe({}); io::println(host::probe(1)); try {{ host::probe(-1); }} catch(e) {{ io::println(e.error_kind()); }} io::println(host::probe(-2)); try {{ host::probe(0); }} catch(e) {{ io::println(e.error_kind()); }} try {{ host::probe(-3); }} catch(e) {{ io::println(e.error_kind()); }} }}",
+        "include std; use io; use host; use err; fn main() {{ host::probe({}); host::probe(-4); io::println(host::probe(1)); try {{ host::probe(-1); }} catch(e) {{ io::println(e.error_kind()); }} io::println(host::probe(-2)); try {{ host::probe(0); }} catch(e) {{ io::println(e.error_kind()); }} try {{ host::probe(-3); }} catch(e) {{ io::println(e.error_kind()); }} }}",
         serde_json::to_string(marker.to_str().unwrap()).unwrap()
     );
     let program = engine

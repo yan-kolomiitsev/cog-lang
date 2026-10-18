@@ -602,7 +602,8 @@ pub fn validate(artifact: &CompiledProgram) -> Result<()> {
             Instruction::Push(value) => budget.value(value)?,
             Instruction::PushArray(template) => budget.template(template, 0)?,
             Instruction::MakeTypedArray(_, ty) | Instruction::ConstrainArrayType(ty) => {
-                budget.runtime_type(ty, 0)?
+                budget.runtime_type(ty, 0)?;
+                validate_runtime_type(ty, 0)?;
             }
             Instruction::IsType(ValueType::Enum(name) | ValueType::Variant(name))
             | Instruction::Crash(Some(name)) => budget.string(name.len())?,

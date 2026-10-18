@@ -159,16 +159,18 @@ fn compare_binop(
     a: Value,
     b: Value,
     op_name: &'static str,
-    int_op: impl Fn(i64, i64) -> bool,
-    float_op: impl Fn(f64, f64) -> bool,
+    predicate: impl FnOnce(Option<std::cmp::Ordering>) -> bool,
 ) -> Result<Value, RuntimeError> {
-    match (a, b) {
-        (Value::Int(x), Value::Int(y)) => Ok(Value::Bool(int_op(x, y))),
-        (Value::Float(x), Value::Float(y)) => Ok(Value::Bool(float_op(x, y))),
-        (Value::Float(x), Value::Int(y)) => Ok(Value::Bool(float_op(x, y as f64))),
-        (Value::Int(x), Value::Float(y)) => Ok(Value::Bool(float_op(x as f64, y))),
-        _ => Err(RuntimeError::TypeMismatch { op: op_name }),
-    }
+    let order = match (a, b) {
+        (Value::Int(x), Value::Int(y)) => Some(x.cmp(&y)),
+        (Value::Float(x), Value::Float(y)) => x.partial_cmp(&y),
+        (Value::Float(x), Value::Int(y)) => {
+            crate::value::compare_int_float(y, x).map(std::cmp::Ordering::reverse)
+        }
+        (Value::Int(x), Value::Float(y)) => crate::value::compare_int_float(x, y),
+        _ => return Err(RuntimeError::TypeMismatch { op: op_name }),
+    };
+    Ok(Value::Bool(predicate(order)))
 }
 
 #[inline]
@@ -453,7 +455,7 @@ fn execute(
     let result = (|| -> Result<(), RuntimeError> {
         while pc < program.len() {
             let heap_limit = context.limits.max_heap_objects;
-            if heap::pending_allocations() >= 256
+            if heap::collection_due()
                 || heap_limit.is_some_and(|limit| heap::live_objects() > limit)
             {
                 heap::collect(&[])?;
@@ -673,29 +675,33 @@ fn execute(
                             Ok(Value::Bool(x == y))
                         }
                         (Value::Int(_) | Value::Float(_), Value::Int(_) | Value::Float(_)) => {
-                            compare_binop(a, b, "eq", |x, y| x == y, |x, y| x == y)
+                            compare_binop(a, b, "eq", |order| {
+                                order == Some(std::cmp::Ordering::Equal)
+                            })
                         }
-                        // Mismatched, structurally-incomparable types (`5 ==
-                        // "5"`, `true == 5`, ..) — not a runtime error, just
-                        // never equal. Same-variant pairs that aren't handled
-                        // above (Array/Record/.. equality isn't implemented at
-                        // all yet) still fall through to `compare_binop` below
-                        // and keep erroring — this only changes the
-                        // *different-type* case, per chat.
+                        // Different normal types compare unequal. Equality of
+                        // arrays, records and other unsupported same-kind values
+                        // produces a recoverable TypeMismatch.
                         _ if std::mem::discriminant(&a) != std::mem::discriminant(&b) => {
                             Ok(Value::Bool(false))
                         }
-                        _ => compare_binop(a, b, "eq", |x, y| x == y, |x, y| x == y),
+                        _ => compare_binop(a, b, "eq", |order| {
+                            order == Some(std::cmp::Ordering::Equal)
+                        }),
                     })?;
                 }
                 Instruction::Lt => {
                     binop(&mut stack, |a, b| {
-                        compare_binop(a, b, "lt", |x, y| x < y, |x, y| x < y)
+                        compare_binop(a, b, "lt", |order| {
+                            order.is_some_and(std::cmp::Ordering::is_lt)
+                        })
                     })?;
                 }
                 Instruction::Gt => {
                     binop(&mut stack, |a, b| {
-                        compare_binop(a, b, "gt", |x, y| x > y, |x, y| x > y)
+                        compare_binop(a, b, "gt", |order| {
+                            order.is_some_and(std::cmp::Ordering::is_gt)
+                        })
                     })?;
                 }
                 Instruction::Ne => {
@@ -707,24 +713,32 @@ fn execute(
                             Ok(Value::Bool(x != y))
                         }
                         (Value::Int(_) | Value::Float(_), Value::Int(_) | Value::Float(_)) => {
-                            compare_binop(a, b, "ne", |x, y| x != y, |x, y| x != y)
+                            compare_binop(a, b, "ne", |order| {
+                                order != Some(std::cmp::Ordering::Equal)
+                            })
                         }
                         // Mirror of `Eq`'s mismatched-type case above — see its
                         // comment.
                         _ if std::mem::discriminant(&a) != std::mem::discriminant(&b) => {
                             Ok(Value::Bool(true))
                         }
-                        _ => compare_binop(a, b, "ne", |x, y| x != y, |x, y| x != y),
+                        _ => compare_binop(a, b, "ne", |order| {
+                            order != Some(std::cmp::Ordering::Equal)
+                        }),
                     })?;
                 }
                 Instruction::Le => {
                     binop(&mut stack, |a, b| {
-                        compare_binop(a, b, "le", |x, y| x <= y, |x, y| x <= y)
+                        compare_binop(a, b, "le", |order| {
+                            order.is_some_and(std::cmp::Ordering::is_le)
+                        })
                     })?;
                 }
                 Instruction::Ge => {
                     binop(&mut stack, |a, b| {
-                        compare_binop(a, b, "ge", |x, y| x >= y, |x, y| x >= y)
+                        compare_binop(a, b, "ge", |order| {
+                            order.is_some_and(std::cmp::Ordering::is_ge)
+                        })
                     })?;
                 }
                 Instruction::CallNative(index) => {
@@ -1537,6 +1551,27 @@ mod tests {
         ]);
         run_with_capabilities(&program, &mut Vec::new(), VmCapabilities::restricted()).unwrap();
         assert_eq!(crate::heap::live_objects(), 0);
+    }
+
+    #[test]
+    fn forgotten_heap_roots_remain_charged_to_the_runtime_object_limit() {
+        let limit = crate::heap::live_objects();
+        let leaked = Value::Record(HeapRef::new(RecordValue::new(
+            std::collections::HashMap::new(),
+        )));
+        std::mem::forget(leaked);
+
+        let program = CompiledProgram::new(vec![Instruction::Halt]);
+        let mut output = Vec::new();
+        let mut context = RuntimeContext::new(&mut output, VmCapabilities::restricted());
+        context.limits.max_heap_objects = Some(limit);
+        assert!(matches!(
+            run_with_context(&program, &mut context),
+            Err(RuntimeError::ResourceLimit {
+                resource: "VM heap objects"
+            })
+        ));
+        assert_eq!(crate::heap::live_objects(), limit + 1);
     }
 
     #[test]
