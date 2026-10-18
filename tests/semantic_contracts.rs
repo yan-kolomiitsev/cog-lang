@@ -287,9 +287,15 @@ fn poison_03_error_array_remains_a_typed_container() {
             else { crash("missing leaf poison"); }
             when values[1] is Error::DivisionByZero { io::println("second leaf"); }
             else { crash("missing second leaf poison"); }
+
+            const mixed = [1 / 0, 7];
+            when mixed is Error { crash("an Error first element poisoned the array"); }
+            when mixed[0] is Error::DivisionByZero { io::println("mixed leaf"); }
+            else { crash("missing mixed leaf Error"); }
+            io::println(mixed[1]);
         }
         "#,
-        "2\nleaf\nsecond leaf\n",
+        "2\nleaf\nsecond leaf\nmixed leaf\n7\n",
     );
 }
 

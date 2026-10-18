@@ -11,6 +11,22 @@ fn diagnostics(source: &str) -> Vec<Diagnostic> {
 }
 
 #[test]
+fn parser_diagnostics_describe_source_tokens_without_debug_names() {
+    let missing_semicolon = frontend::parse("missing-semi.cog", "fn main() { const value = 1 }");
+    let message = &missing_semicolon.diagnostics[0].message;
+    assert!(message.contains("expected `;`, found `}`"), "{message}");
+    assert!(!message.contains("RBrace"), "{message}");
+
+    let invalid_path = frontend::parse("invalid-path.cog", "include game from target;");
+    let message = &invalid_path.diagnostics[0].message;
+    assert!(
+        message.contains("expected a relative path after `from`, found identifier `target`"),
+        "{message}"
+    );
+    assert!(!message.contains("Ident("), "{message}");
+}
+
+#[test]
 fn comptime_prefix_before_include_is_rejected_with_a_directive_diagnostic() {
     let errors = diagnostics("comptime include std; fn main() {}");
     assert_eq!(errors.len(), 1, "{errors:?}");

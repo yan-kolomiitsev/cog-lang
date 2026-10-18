@@ -143,6 +143,21 @@ impl SourceLocation {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Severity {
+    Error,
+    Warning,
+}
+
+impl Severity {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Error => "error",
+            Self::Warning => "warning",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Diagnostic {
     pub code: &'static str,
@@ -161,6 +176,22 @@ impl Diagnostic {
         }
     }
 
+    pub fn warning(
+        code: &'static str,
+        message: impl Into<String>,
+        span: Option<SourceSpan>,
+    ) -> Self {
+        Self::new(code, message, span)
+    }
+
+    pub fn severity(&self) -> Severity {
+        if self.code.starts_with('W') {
+            Severity::Warning
+        } else {
+            Severity::Error
+        }
+    }
+
     pub fn note(mut self, note: impl Into<String>) -> Self {
         self.notes.push(note.into());
         self
@@ -169,7 +200,13 @@ impl Diagnostic {
 
 impl std::fmt::Display for Diagnostic {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "error[{}]: {}", self.code, self.message)?;
+        writeln!(
+            f,
+            "{}[{}]: {}",
+            self.severity().label(),
+            self.code,
+            self.message
+        )?;
         if let Some(span) = &self.span {
             let start = span.source.byte_boundary(span.range.start);
             let (line, column, line_start) = span.source.line_info(start);

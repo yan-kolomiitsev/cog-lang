@@ -79,6 +79,12 @@ fn public_markdown_cog_examples_compile_and_round_trip() {
 #[test]
 fn getting_started_cog_examples_compile_and_round_trip() {
     let html = include_str!("../web/get_started.html");
+    let execution_outputs = [
+        "42\nCog\n3\n",
+        "right operand ran\nthe left Error survived the operation\n7\nthe selected array element is an Error\n",
+        "Cog tools\nred / green / blue\n3\n",
+        "42\n",
+    ];
     let mut count = 0;
     for (index, block) in html.split("<textarea class=\"source\"").skip(1).enumerate() {
         let (_, block) = block.split_once('>').expect("missing editor attributes");
@@ -92,6 +98,22 @@ fn getting_started_cog_examples_compile_and_round_trip() {
             .replace("&#x27;", "'")
             .replace("&amp;", "&");
         check_source(&format!("web/get_started.html:{index}"), &source);
+        if let Some(expected) = execution_outputs.get(index.saturating_sub(9))
+            && index >= 9
+        {
+            let program =
+                project::compile_source(&format!("web/get_started.html:{index}"), &source)
+                    .unwrap_or_else(|error| panic!("web/get_started.html:{index}:\n{error}"));
+            let encoded = bytecode::encode(&program).unwrap();
+            let instructions = bytecode::decode(&encoded).unwrap();
+            let mut output = Vec::new();
+            cog::interpreter::run_with(&instructions, &mut output).unwrap();
+            assert_eq!(
+                String::from_utf8(output).unwrap(),
+                *expected,
+                "lesson {index}"
+            );
+        }
         count += 1;
     }
     assert!(count > 0, "no getting-started code examples found");

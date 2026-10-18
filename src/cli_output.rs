@@ -85,6 +85,35 @@ impl Color {
             eprintln!("{line}");
         }
     }
+
+    pub fn warning(&self, warning: &str) {
+        for line in warning.lines() {
+            if let Some((label, message)) = line.split_once(": ")
+                && (label.starts_with("warning[") || label == "warning")
+            {
+                eprintln!(
+                    "{}: {}",
+                    self.paint(label, "1;33"),
+                    self.paint(message, "1")
+                );
+            } else if let Some(location) = line.strip_prefix(" --> ") {
+                eprintln!(" {} {location}", self.paint("-->", "1;36"));
+            } else if let Some(note) = line.strip_prefix(" note: ") {
+                eprintln!(" {} {note}", self.paint("note:", "1;36"));
+            } else if let Some((gutter, source)) = line.split_once('|')
+                && gutter.chars().all(|c| c.is_ascii_digit() || c == ' ')
+            {
+                let source = if gutter.trim().is_empty() && source.trim_start().starts_with('^') {
+                    self.paint(source, "1;33")
+                } else {
+                    source.into()
+                };
+                eprintln!("{}{source}", self.paint(&format!("{gutter}|"), "1;36"));
+            } else {
+                eprintln!("{line}");
+            }
+        }
+    }
 }
 
 pub fn preparation_error(error: String, action: &str, path: &Path, elapsed: Duration) -> String {

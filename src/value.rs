@@ -124,10 +124,19 @@ impl IteratorValue {
 
 impl ArrayValue {
     pub fn new(values: Vec<Value>) -> Result<Self, ArrayTypeError> {
+        // Error is orthogonal to the normal element type. Infer an array's
+        // element contract from a normal value even when an Error appears first.
         let element_type = values
             .iter()
+            .filter(|value| !matches!(value, Value::Error(_)))
             .map(RuntimeType::of)
-            .find(|ty| !has_undetermined_array_type(ty));
+            .find(|ty| !has_undetermined_array_type(ty))
+            .or_else(|| {
+                values
+                    .iter()
+                    .map(RuntimeType::of)
+                    .find(|ty| !has_undetermined_array_type(ty))
+            });
         if !values.is_empty() && element_type.is_none() {
             return Err(ArrayTypeError);
         }

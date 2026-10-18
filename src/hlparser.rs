@@ -338,8 +338,15 @@ impl<'a> Parser<'a> {
             Some(Token::Is) => Err(self.err(
                 "`is` is only allowed in `when value is Pattern`; it is not an expression operator",
             )),
-            Some(t) => Err(self.err(format!("expected {:?}, found {:?}", expected, t))),
-            None => Err(self.err(format!("expected {:?}, found end of input", expected))),
+            Some(t) => Err(self.err(format!(
+                "expected {}, found {}",
+                token_description(expected),
+                token_description(t)
+            ))),
+            None => Err(self.err(format!(
+                "expected {}, found end of input",
+                token_description(expected)
+            ))),
         }
     }
 
@@ -349,7 +356,10 @@ impl<'a> Parser<'a> {
                 self.advance();
                 Ok(name)
             }
-            Some(t) => Err(self.err(format!("expected identifier, found {:?}", t))),
+            Some(t) => Err(self.err(format!(
+                "expected identifier, found {}",
+                token_description(&t)
+            ))),
             None => Err(self.err("expected identifier, found end of input")),
         }
     }
@@ -521,7 +531,10 @@ impl<'a> Parser<'a> {
             }
             Some(Token::Ident(name)) if name == "include" => self.parse_include(),
             Some(Token::Ident(name)) if name == "extend" => self.parse_extend_decl(false),
-            Some(t) => Err(self.err(format!("expected top-level declaration, found {:?}", t))),
+            Some(t) => Err(self.err(format!(
+                "expected a top-level declaration, found {}",
+                token_description(t)
+            ))),
             None => Err(self.err("expected top-level declaration, found end of input")),
         }
     }
@@ -783,7 +796,8 @@ impl<'a> Parser<'a> {
                 }
                 Some(token) => {
                     return Err(self.err(format!(
-                        "expected a relative path after `from`, found {token:?}"
+                        "expected a relative path after `from`, found {}",
+                        token_description(&token)
                     )));
                 }
                 None => return Err(self.err("expected a relative path after `from`")),
@@ -1581,7 +1595,12 @@ impl<'a> Parser<'a> {
                         nilable: false,
                     }
                 }
-                Some(t) => return Err(self.err(format!("expected type annotation, found {t:?}"))),
+                Some(t) => {
+                    return Err(self.err(format!(
+                        "expected a type annotation, found {}",
+                        token_description(&t)
+                    )));
+                }
                 None => {
                     return Err(self.err("expected type annotation after `:`, found end of input"));
                 }
@@ -1829,7 +1848,9 @@ impl<'a> Parser<'a> {
             Some(Token::Ident(s)) if s == "in" => {
                 self.advance();
             }
-            Some(t) => return Err(self.err(format!("expected `in`, found {:?}", t))),
+            Some(t) => {
+                return Err(self.err(format!("expected `in`, found {}", token_description(t))));
+            }
             None => return Err(self.err("expected `in`, found end of input")),
         }
         let start = self.parse_expr()?;
@@ -1966,7 +1987,12 @@ impl<'a> Parser<'a> {
         let first = match self.peek().cloned() {
             Some(Token::Ident(name)) => name,
             Some(Token::Nil) => "nil".into(),
-            Some(t) => return Err(self.err(format!("expected match pattern, found {:?}", t))),
+            Some(t) => {
+                return Err(self.err(format!(
+                    "expected a match pattern, found {}",
+                    token_description(&t)
+                )));
+            }
             None => return Err(self.err("expected match pattern, found end of input")),
         };
         self.advance();
@@ -2212,7 +2238,8 @@ impl<'a> Parser<'a> {
                 Ok(VarType::Float)
             }
             Some(t) => Err(self.err(format!(
-                "expected type after `as` (int/bool/str/float), found {t:?}"
+                "expected a type after `as` (`int`, `bool`, `str`, or `float`), found {}",
+                token_description(&t)
             ))),
             None => Err(self.err("expected type after `as`, found end of input")),
         }
@@ -2319,7 +2346,10 @@ impl<'a> Parser<'a> {
                 self.advance();
                 self.parse_ident_trailer(name)
             }
-            Some(t) => Err(self.err(format!("unexpected token {:?} in expression", t))),
+            Some(t) => Err(self.err(format!(
+                "unexpected {} in expression",
+                token_description(&t)
+            ))),
             None => Err(self.err("unexpected end of input in expression")),
         }
     }
@@ -2354,7 +2384,10 @@ impl<'a> Parser<'a> {
             let segment = match self.peek().cloned() {
                 Some(Token::Ident(s)) => s,
                 Some(t) => {
-                    return Err(self.err(format!("expected identifier after `::`, found {:?}", t)));
+                    return Err(self.err(format!(
+                        "expected identifier after `::`, found {}",
+                        token_description(&t)
+                    )));
                 }
                 None => return Err(self.err("expected identifier after `::`, found end of input")),
             };
@@ -2498,6 +2531,113 @@ impl<'a> Parser<'a> {
         }
         self.expect(&Token::RBracket)?;
         Ok(Expr::Array(items))
+    }
+}
+
+fn token_description(token: &Token) -> String {
+    match token {
+        Token::Invalid => "invalid token".into(),
+        Token::Int(value) => format!("integer literal {}", quote_excerpt(&value.to_string())),
+        Token::Float(value) => format!("float literal {}", quote_excerpt(&value.to_string())),
+        Token::Str(_) => "string literal".into(),
+        Token::Interpolated(_) => "interpolated string".into(),
+        Token::Ident(name) => format!("identifier {}", quote_excerpt(name)),
+        Token::Path(path) => format!("path {}", quote_excerpt(path)),
+        _ => format!("`{}`", token_lexeme(token)),
+    }
+}
+
+fn quote_excerpt(value: &str) -> String {
+    let mut chars = value.chars();
+    let excerpt: String = chars.by_ref().take(48).collect();
+    let truncated = chars.next().is_some();
+    format!(
+        "`{}{}`",
+        excerpt.escape_debug(),
+        if truncated { "…" } else { "" }
+    )
+}
+
+fn token_lexeme(token: &Token) -> &'static str {
+    match token {
+        Token::True => "true",
+        Token::False => "false",
+        Token::Nil => "nil",
+        Token::Fn => "fn",
+        Token::Public => "public",
+        Token::Private => "private",
+        Token::Struct => "struct",
+        Token::Enum => "enum",
+        Token::Use => "use",
+        Token::Var => "var",
+        Token::Const => "const",
+        Token::Comptime => "comptime",
+        Token::If => "if",
+        Token::Else => "else",
+        Token::While => "while",
+        Token::For => "for",
+        Token::Break => "break",
+        Token::Continue => "continue",
+        Token::Return => "return",
+        Token::Defer => "defer",
+        Token::Try => "try",
+        Token::Catch => "catch",
+        Token::Crash => "crash",
+        Token::Plus => "+",
+        Token::Minus => "-",
+        Token::Star => "*",
+        Token::Slash => "/",
+        Token::Percent => "%",
+        Token::Shl => "<<",
+        Token::Shr => ">>",
+        Token::EqEq => "==",
+        Token::NotEq => "!=",
+        Token::LtEq => "<=",
+        Token::GtEq => ">=",
+        Token::Lt => "<",
+        Token::Gt => ">",
+        Token::AmpAmp => "&&",
+        Token::PipePipe => "||",
+        Token::Caret => "^",
+        Token::Bang => "!",
+        Token::NilFallback => "??",
+        Token::ErrorFallback => "?!",
+        Token::PlusEq => "+=",
+        Token::MinusEq => "-=",
+        Token::StarEq => "*=",
+        Token::SlashEq => "/=",
+        Token::PercentEq => "%=",
+        Token::AmpAmpEq => "&&=",
+        Token::PipePipeEq => "||=",
+        Token::CaretEq => "^=",
+        Token::Eq => "=",
+        Token::Dot => ".",
+        Token::DotDot => "..",
+        Token::LParen => "(",
+        Token::RParen => ")",
+        Token::LBrace => "{",
+        Token::RBrace => "}",
+        Token::LBracket => "[",
+        Token::RBracket => "]",
+        Token::Comma => ",",
+        Token::Semi => ";",
+        Token::Colon => ":",
+        Token::DoubleColon => "::",
+        Token::MatchArrow => "=>",
+        Token::Arrow => "->",
+        Token::When => "when",
+        Token::Is => "is",
+        Token::As => "as",
+        Token::Pipe => "|",
+        Token::Match => "match",
+        Token::Question => "?",
+        Token::Invalid
+        | Token::Float(_)
+        | Token::Int(_)
+        | Token::Str(_)
+        | Token::Interpolated(_)
+        | Token::Ident(_)
+        | Token::Path(_) => unreachable!("described token has no fixed lexeme"),
     }
 }
 

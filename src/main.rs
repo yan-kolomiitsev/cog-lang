@@ -21,6 +21,7 @@ struct Options {
     allow_asm: bool,
     restricted: bool,
     target: Option<String>,
+    use_modules: Vec<String>,
     locked: bool,
     output: Option<PathBuf>,
     program_args: Vec<OsString>,
@@ -53,6 +54,9 @@ fn command(color: &mut Color) -> Result<(), String> {
             "--allow-asm" => options.allow_asm = true,
             "--restricted" => options.restricted = true,
             "--target" => options.target = Some(required_cli_arg(&mut args, "--target")?),
+            "--use" => options
+                .use_modules
+                .push(required_cli_arg(&mut args, "--use")?),
             "--locked" => options.locked = true,
             "--plugin" => options.plugins.push(
                 args.next()
@@ -71,8 +75,12 @@ fn command(color: &mut Color) -> Result<(), String> {
                 print_usage();
                 return Ok(());
             }
-            "init" | "check" | "run" | "build" if action.is_none() => action = Some(arg),
-            _ if arg.starts_with('-') => return Err(format!("unknown option `{arg}`")),
+            "init" | "check" | "run" | "build" | "eval" if action.is_none() => action = Some(arg),
+            _ if arg.starts_with('-')
+                && !(action.as_deref() == Some("eval") && target.is_none()) =>
+            {
+                return Err(format!("unknown option `{arg}`"));
+            }
             _ if target.is_none() => target = Some(arg),
             _ => return Err(format!("unexpected argument `{arg}`")),
         }
@@ -87,6 +95,22 @@ fn command(color: &mut Color) -> Result<(), String> {
     }
     if options.output.is_some() && action != "build" {
         return Err("--output is only valid with `build`".into());
+    }
+    if !options.use_modules.is_empty() && action != "eval" {
+        return Err("--use is only valid with `eval`".into());
+    }
+    if action == "eval" {
+        if !options.plugins.is_empty() {
+            return Err("--plugin is not supported with `eval`".into());
+        }
+        if options.target.is_some() || options.locked || options.allow_asm {
+            return Err("--target, --locked, and --allow-asm are not valid with `eval`".into());
+        }
+        let expression = target
+            .as_deref()
+            .filter(|expression| !expression.trim().is_empty())
+            .ok_or("eval requires one Cog expression; usage: cog eval [options] <expression>")?;
+        return eval_expression(expression, &options, color);
     }
     if action == "init" {
         if !options.plugins.is_empty() {
@@ -110,17 +134,21 @@ fn command(color: &mut Color) -> Result<(), String> {
     let bytecode_input =
         !target.is_dir() && target.extension().and_then(|s| s.to_str()) == Some("cogb");
     let started = Instant::now();
-    let (compiled, reused, destination) = prepare(target, mode, &options).map_err(|error| {
-        let action = if bytecode_input {
-            "load"
-        } else if mode == Mode::Check {
-            "check"
-        } else {
-            "build"
-        };
-        cli_output::preparation_error(error, action, target, started.elapsed())
-    })?;
+    let (compiled, reused, destination, warnings) =
+        prepare(target, mode, &options).map_err(|error| {
+            let action = if bytecode_input {
+                "load"
+            } else if mode == Mode::Check {
+                "check"
+            } else {
+                "build"
+            };
+            cli_output::preparation_error(error, action, target, started.elapsed())
+        })?;
     let elapsed = started.elapsed();
+    if !warnings.is_empty() {
+        color.warning(&frontend::render(&warnings));
+    }
     if options.debug {
         println!("bytecode\n{}", compiled.disassemble());
     }
@@ -169,11 +197,77 @@ fn command(color: &mut Color) -> Result<(), String> {
     }
 }
 
+fn eval_expression(expression: &str, options: &Options, color: &Color) -> Result<(), String> {
+    let mut source = String::from("include std;\nuse io;\n");
+    let mut imports: Vec<String> = Vec::new();
+    for module in &options.use_modules {
+        if !is_identifier(module) {
+            return Err(format!(
+                "--use expects a standard-library module name, got `{module}`"
+            ));
+        }
+        if module != "io" && !imports.contains(module) {
+            source.push_str("use ");
+            source.push_str(module);
+            source.push_str(";\n");
+            imports.push(module.clone());
+        }
+    }
+    source.push_str("\nfn main() { io::println((");
+    source.push_str(expression);
+    source.push_str("))!!; }\n");
+
+    let (compiled, warnings) = project::compile_source_with_warnings("eval.cog", &source)?;
+    if !warnings.is_empty() {
+        color.warning(&frontend::render(&warnings));
+    }
+    if options.debug {
+        println!("bytecode\n{}", compiled.disassemble());
+    }
+    let capabilities = if options.restricted {
+        VmCapabilities {
+            allow_print: true,
+            allow_read: true,
+            ..VmCapabilities::restricted()
+        }
+    } else {
+        VmCapabilities::default()
+    };
+    let mut stdout = std::io::stdout();
+    let mut context = RuntimeContext::new(&mut stdout, capabilities);
+    interpreter::run_with_context(&compiled, &mut context).map_err(|error| {
+        if let Some(location) = context.last_source_location() {
+            format!(
+                "runtime error at {}:{}:{}: {error}",
+                location.file.escape_debug(),
+                location.line,
+                location.column
+            )
+        } else {
+            format!("runtime error: {error}")
+        }
+    })
+}
+
+fn is_identifier(value: &str) -> bool {
+    let mut chars = value.chars();
+    matches!(chars.next(), Some(c) if c == '_' || c.is_ascii_alphabetic())
+        && chars.all(|c| c == '_' || c.is_ascii_alphanumeric())
+}
+
 fn prepare(
     target: &Path,
     mode: Mode,
     options: &Options,
-) -> Result<(CompiledProgram, bool, PathBuf), String> {
+) -> Result<
+    (
+        CompiledProgram,
+        bool,
+        PathBuf,
+        Vec<cog::diagnostic::Diagnostic>,
+    ),
+    String,
+> {
     let bytecode_input =
         !target.is_dir() && target.extension().and_then(|s| s.to_str()) == Some("cogb");
     let prepared = if target.is_dir() || target.extension().and_then(|s| s.to_str()) == Some("cog")
@@ -199,21 +293,19 @@ fn prepare(
     if mode == Mode::Build && destination.extension().and_then(|s| s.to_str()) != Some("cogb") {
         return Err("bytecode output must have the .cogb extension".into());
     }
-    let (compiled, reused) = if let Some(prepared) = prepared {
+    let (compiled, reused, warnings) = if let Some(prepared) = prepared {
         if mode == Mode::Check {
             let loaded = prepared.resolve();
-            (
-                project::compile_with_inputs(
-                    loaded.program,
-                    loaded.diagnostics,
-                    &loaded.names,
-                    &loaded.build_inputs,
-                )?,
-                false,
-            )
+            let (compiled, warnings) = project::compile_with_inputs_and_warnings(
+                loaded.program,
+                loaded.diagnostics,
+                &loaded.names,
+                &loaded.build_inputs,
+            )?;
+            (compiled, false, warnings)
         } else {
-            let built = build::project(prepared, &destination)?;
-            (built.program, built.reused)
+            let (built, warnings) = build::project_with_warnings(prepared, &destination)?;
+            (built.program, built.reused, warnings)
         }
     } else {
         let mut compiled = compile_file(target, options)?;
@@ -223,18 +315,20 @@ fn prepare(
                 compiled = load_bytecode(&destination)?;
             }
         }
-        (compiled, false)
+        (compiled, false, Vec::new())
     };
-    Ok((compiled, reused, destination))
+    Ok((compiled, reused, destination, warnings))
 }
 
 fn print_usage() {
     eprintln!("usage: cog [check|run|build] [path] [options] [-- program-arguments...]");
+    eprintln!("       cog eval [--debug] [--restricted] [--use <module>]... <expression>");
     eprintln!("       cog --version|-V");
     eprintln!("       cog build <file.cog|project> [-o output.cogb]");
     eprintln!("       cog run [file.cog|project]  (reuse or build .cogb, then execute it)");
     eprintln!("       cog run <file.cogb>  (no source files or compilation required)");
     eprintln!("       cog init <directory>");
+    eprintln!("       eval compiles and runs one expression; --debug prints its bytecode");
     eprintln!("       --allow-asm  enable the standalone assembler for VM diagnostics");
     eprintln!("       --restricted  allow only stdin/stdout runtime host effects");
     eprintln!("       --plugin <manifest.kdl>  explicit trusted native plugin (repeatable)");

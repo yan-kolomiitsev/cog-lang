@@ -170,6 +170,28 @@ fn cli_reports_version_without_a_command_or_path() {
 }
 
 #[test]
+fn cli_check_prints_non_fatal_source_warnings() {
+    let f = Fixture::new();
+    f.write("main.cog", "fn main() { const unused = 1; }");
+
+    let output = f.cli("check", &[]);
+    success(&output);
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("warning[W0001]"), "{stderr}");
+    assert!(
+        stderr.contains("local binding `unused` is never read"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("main.cog:1:"), "{stderr}");
+    assert!(stderr.contains("checked "), "{stderr}");
+
+    let output = f.cli("build", &[]);
+    success(&output);
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("warning[W0001]"), "{stderr}");
+}
+
+#[test]
 fn public_comptime_values_import_and_materialize_across_modules() {
     let f = Fixture::new();
     f.write("constants.cog", "public comptime BASE: int = 3;");
@@ -192,6 +214,42 @@ fn public_comptime_functions_import_and_materialize_across_modules() {
         "use constants; use io; comptime VALUE: int = constants::double(21); fn main() { io::println(VALUE); }",
     );
     assert_eq!(f.run(), "42\n");
+}
+
+#[test]
+fn cli_evaluates_expressions_with_optional_imports_and_bytecode_debugging() {
+    let binary = env!("CARGO_BIN_EXE_cog");
+    let evaluated = Command::new(binary)
+        .args(["eval", "2 + 3 * 4"])
+        .output()
+        .unwrap();
+    success(&evaluated);
+    assert_eq!(evaluated.stdout, b"14\n");
+
+    let imported = Command::new(binary)
+        .args(["eval", "--use", "str", "str::trim(\" Cog \")"])
+        .output()
+        .unwrap();
+    success(&imported);
+    assert_eq!(imported.stdout, b"Cog\n");
+
+    let debug = Command::new(binary)
+        .args(["eval", "--debug", "2 + 3"])
+        .output()
+        .unwrap();
+    success(&debug);
+    let debug_output = String::from_utf8(debug.stdout).unwrap();
+    assert!(debug_output.contains("bytecode\n"), "{debug_output}");
+    assert!(debug_output.ends_with("5\n"), "{debug_output}");
+
+    let invalid = Command::new(binary).args(["eval", "1 +"]).output().unwrap();
+    assert!(!invalid.status.success());
+    let diagnostic = String::from_utf8(invalid.stderr).unwrap();
+    assert!(
+        diagnostic.contains("unexpected `)` in expression"),
+        "{diagnostic}"
+    );
+    assert!(!diagnostic.contains("RParen"), "{diagnostic}");
 }
 
 #[cfg(unix)]

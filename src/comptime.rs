@@ -35,6 +35,31 @@ enum ComptimeValue {
 }
 
 impl ComptimeValue {
+    fn to_expr_with_budget(
+        &self,
+        span: Option<SourceSpan>,
+        budget: &mut Budget,
+    ) -> Result<Expr, String> {
+        match self {
+            Self::Error(error) => return Err(error.to_string()),
+            Self::Propagate(_) => {
+                return Err(RuntimeError::TypeMismatch {
+                    op: "comptime propagation",
+                }
+                .to_string());
+            }
+            Self::Type(_) => {
+                return Err(RuntimeError::TypeMismatch {
+                    op: "comptime type",
+                }
+                .to_string());
+            }
+            _ => {}
+        }
+        budget.allocate(self.clone_cost()?)?;
+        self.to_expr(span).map_err(|error| error.to_string())
+    }
+
     fn to_expr(&self, span: Option<SourceSpan>) -> Result<Expr, RuntimeError> {
         let value = match self {
             Self::Int(value) => Expr::Int(*value),
@@ -348,7 +373,7 @@ pub(crate) fn evaluate_program_with_inputs(
                     binding: Some(name),
                 };
             }
-            Ok(result) => match result.to_expr(span.clone()) {
+            Ok(result) => match result.to_expr_with_budget(span.clone(), &mut budget) {
                 Ok(value) => {
                     globals.insert(name.clone(), Some(result));
                     *item = Item::GlobalConst {
@@ -359,7 +384,7 @@ pub(crate) fn evaluate_program_with_inputs(
                     };
                 }
                 Err(error) => {
-                    diagnostics.push(comptime_error(error.to_string(), span));
+                    diagnostics.push(comptime_error(error, span));
                     globals.insert(name.clone(), None);
                     *item = Item::Invalid {
                         binding: Some(name),
@@ -499,13 +524,13 @@ fn rewrite_stmt(
                 &types,
                 budget,
             ) {
-                Ok(result) => match result.to_expr(span.clone()) {
+                Ok(result) => match result.to_expr_with_budget(span.clone(), budget) {
                     Ok(value) => {
                         values.insert(name.clone(), Some(result));
                         replace_stmt(statement, Stmt::Const { name, ty, value });
                     }
                     Err(error) => {
-                        diagnostics.push(comptime_error(error.to_string(), span));
+                        diagnostics.push(comptime_error(error, span));
                         values.insert(name.clone(), None);
                         replace_stmt(
                             statement,
@@ -2336,6 +2361,19 @@ mod tests {
             &globals,
             &mut budget,
         );
+
+        assert!(result.unwrap_err().contains("allocation budget exceeded"));
+    }
+
+    #[test]
+    fn comptime_ast_materialization_clone_is_charged_before_copy() {
+        let value = ComptimeValue::Str("x".repeat(1024));
+        let mut budget = Budget {
+            allocated: crate::ast_budget::MAX_COST - 512,
+            ..Budget::default()
+        };
+
+        let result = value.to_expr_with_budget(None, &mut budget);
 
         assert!(result.unwrap_err().contains("allocation budget exceeded"));
     }

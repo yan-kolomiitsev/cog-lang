@@ -57,7 +57,11 @@ footer { color:var(--muted); font-size:13px; padding:5px 0 25px; }
 <a href="#arrays">6. Arrays and shared values</a>
 <a href="#strings">7. Strings and input</a>
 <a href="#patterns">8. Structs, enums, and patterns</a>
-<a href="#errors">9. Errors and cleanup</a></nav></aside>
+<a href="#errors">9. Errors and cleanup</a>
+<a href="#generics">10. Generics</a>
+<a href="#error-values">11. Error values</a>
+<a href="#stdlib">12. Standard library</a>
+<a href="#comptime">13. Comptime</a></nav></aside>
 <main><h1>Get started with Cog</h1><p>Work through these small programs to learn the basics. Edit an example and choose Run, or press Ctrl+Enter / Command+Enter in its editor.</p>
 <div class="setup"><h2>Run this tutorial locally</h2><p>Requires Rust 1.95 or newer, Cargo, and Node.js 24.12 or newer. From the Cog repository:</p><pre><code>node web/server.mts</code></pre><p>The server builds Cog and prints a local URL. Open that URL to run examples with the actual compiler and VM. No npm installation is needed. If Cargo dependencies are not cached, run <code>cargo build --locked --bin cog</code> first.</p><p>For a standalone program: save the source as <code>main.cog</code>, then run <code>cargo run --locked --bin cog -- run main.cog</code>.</p></div>
 <div id="connection" role="status" aria-live="polite">Start the local server to run examples. You can still read and edit them here.</div>
@@ -216,7 +220,93 @@ fn main() -&gt; nil {
 <div class="actions"><button class="run" type="button" disabled>Run</button><button class="reset" type="button">Reset</button><span class="run-status" role="status" aria-live="polite"></span></div>
 <div class="result" hidden><div class="output-group"><h3>Output</h3><pre class="output" tabindex="0"></pre></div><div class="diagnostic-group" hidden><h3>Diagnostics</h3><pre class="diagnostics" tabindex="0"></pre></div></div>
 <p class="exercise"><strong>Try it:</strong> Replace &quot;bad&quot; in the last call with &quot;42&quot;. The catch branch should no longer run.</p></section>
-<section class="next"><h2>Next: modules and projects</h2><p>Use <code>cog init my-app</code> to create a project. Modules follow source filenames; <code>use</code> imports names and <code>public</code> exposes declarations to other modules.</p><p>Try the <a href="../examples/modules/README.md">modules example</a> and <a href="../examples/package_include/">package inclusion example</a>, then read the <a href="../docs/PROJECT_FORMATS.md">project guide</a>. The <a href="../docs/LANGUAGE.md">language reference</a> covers further details and current limitations.</p><p>This tutorial uses implemented syntax. Typed arrays, scalar/struct compile-time evaluation, type aliases, extension methods, inferred specialization of runtime generic functions, and statically dispatched traits are available. Generic structs, closures, and JIT remain future work; see the <a href="../examples/README.md">examples</a> and <a href="../docs/LANGUAGE.md#compile-time-evaluation">language reference</a>.</p></section>
+<section id="generics" class="lesson"><h2>10. Generics and trait bounds</h2><p>A type parameter such as <code>T: type</code> is inferred from arguments and specialized at compile time. A trait bound states which operations the generic body needs. Here <code>smallest</code> can call the standard array API because <code>T</code> implements <code>Ord</code>.</p>
+<label class="editor-label" for="code-generics">Cog example</label><textarea class="source" id="code-generics" rows="15" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off">include std;
+use io;
+use array;
+use ord::Ord;
+
+fn identity[T: type](value: T) -&gt; T { value }
+fn smallest[T: type + Ord](values: T[]) -&gt; T {
+    array::min(values)!!
+}
+
+fn main() -&gt; nil {
+    const number = identity(42);
+    const word = identity(&quot;Cog&quot;);
+    io::println(number)!!;
+    io::println(word)!!;
+    io::println(smallest([8, 3, 5]))!!;
+}
+</textarea>
+<div class="actions"><button class="run" type="button" disabled>Run</button><button class="reset" type="button">Reset</button><span class="run-status" role="status" aria-live="polite"></span></div>
+<div class="result" hidden><div class="output-group"><h3>Output</h3><pre class="output" tabindex="0"></pre></div><div class="diagnostic-group" hidden><h3>Diagnostics</h3><pre class="diagnostics" tabindex="0"></pre></div></div>
+<p class="exercise"><strong>Try it:</strong> Call <code>identity</code> with a float. Then remove <code>+ Ord</code> and see why the compiler needs the bound.</p></section>
+<section id="error-values" class="lesson"><h2>11. Error values and propagation</h2><p>An Error is a computational result that strict operations preserve; it does not recursively turn every container holding it into an Error. Strict binary operators evaluate both operands once, from left to right. Inspect an Error with <code>when</code>, handle it with <code>?!</code> or <code>try/catch</code>, or explicitly propagate it with <code>!!</code>.</p>
+<label class="editor-label" for="code-error-values">Cog example</label><textarea class="source" id="code-error-values" rows="19" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off">include std;
+use io;
+use err::Error;
+
+fn right_operand() -&gt; int {
+    io::println(&quot;right operand ran&quot;)!!;
+    2
+}
+
+fn main() -&gt; nil {
+    const combined = (&quot;not a number&quot; as int) + right_operand();
+    when combined is Error::ParseFailure(_, _) {
+        io::println(&quot;the left Error survived the operation&quot;)!!;
+    }
+
+    const values = [1 / 0, 7];
+    io::println(values[1])!!;
+    when values[0] is Error::DivisionByZero {
+        io::println(&quot;the selected array element is an Error&quot;)!!;
+    }
+}
+</textarea>
+<div class="actions"><button class="run" type="button" disabled>Run</button><button class="reset" type="button">Reset</button><span class="run-status" role="status" aria-live="polite"></span></div>
+<div class="result" hidden><div class="output-group"><h3>Output</h3><pre class="output" tabindex="0"></pre></div><div class="diagnostic-group" hidden><h3>Diagnostics</h3><pre class="diagnostics" tabindex="0"></pre></div></div>
+<p class="exercise"><strong>Try it:</strong> Change the conversion to <code>&quot;12&quot; as int</code>. Then read <a href="../docs/ERRORS.md">the Error guide</a> for the exact observation and propagation rules.</p></section>
+<section id="stdlib" class="lesson"><h2>12. Using the standard library</h2><p>Import only the modules you use. Standard functions can return Error, so handle or propagate those results. This example trims text, splits it into an array, joins it, and finds its least element.</p>
+<label class="editor-label" for="code-stdlib">Cog example</label><textarea class="source" id="code-stdlib" rows="14" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off">include std;
+use io;
+use str;
+use array;
+
+fn main() -&gt; nil {
+    const title = str::trim(&quot;  Cog tools  &quot;)!!;
+    const colors = str::split(&quot;red,green,blue&quot;, &quot;,&quot;)!!;
+    const joined = str::join(colors, &quot; / &quot;)!!;
+    const least = array::min([8, 3, 5])!!;
+    io::println(title)!!;
+    io::println(joined)!!;
+    io::println(least)!!;
+}
+</textarea>
+<div class="actions"><button class="run" type="button" disabled>Run</button><button class="reset" type="button">Reset</button><span class="run-status" role="status" aria-live="polite"></span></div>
+<div class="result" hidden><div class="output-group"><h3>Output</h3><pre class="output" tabindex="0"></pre></div><div class="diagnostic-group" hidden><h3>Diagnostics</h3><pre class="diagnostics" tabindex="0"></pre></div></div>
+<p class="exercise"><strong>Try it:</strong> Change the separator, then browse <a href="../docs/STANDARD_LIBRARY.md">the standard library reference</a> for filesystem, process, math, and collection APIs.</p></section>
+<section id="comptime" class="lesson"><h2>13. Compile-time evaluation</h2><p><code>comptime</code> evaluates a binding before runtime code is generated. A <code>comptime fn</code> can compute reusable values; its call is evaluated during compilation and the result is materialized for the program. The function itself does not run in the VM.</p>
+<label class="editor-label" for="code-comptime">Cog example</label><textarea class="source" id="code-comptime" rows="13" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off">include std;
+use io;
+
+comptime BASE: int = 20;
+
+comptime fn twice(value: int) -&gt; int {
+    value * 2
+}
+
+comptime ANSWER: int = twice(BASE) + 2;
+
+fn main() -&gt; nil {
+    io::println(ANSWER)!!;
+}
+</textarea>
+<div class="actions"><button class="run" type="button" disabled>Run</button><button class="reset" type="button">Reset</button><span class="run-status" role="status" aria-live="polite"></span></div>
+<div class="result" hidden><div class="output-group"><h3>Output</h3><pre class="output" tabindex="0"></pre></div><div class="diagnostic-group" hidden><h3>Diagnostics</h3><pre class="diagnostics" tabindex="0"></pre></div></div>
+<p class="exercise"><strong>Try it:</strong> Change <code>BASE</code> and observe the result. See <a href="../docs/LANGUAGE.md#compile-time-evaluation">the language reference</a> for supported comptime operations and current limits.</p></section>
+<section class="next"><h2>Next: modules and projects</h2><p>Use <code>cog init my-app</code> to create a project. Modules follow source filenames; <code>use</code> imports names and <code>public</code> exposes declarations to other modules.</p><p>Try the <a href="../examples/modules/README.md">modules example</a> and <a href="../examples/package_include/">package inclusion example</a>, then read the <a href="../docs/PROJECT_FORMATS.md">project guide</a>. The <a href="../docs/LANGUAGE.md">language reference</a> covers further details and current limitations.</p><p>This tutorial uses implemented syntax. Typed arrays, scalar and struct compile-time evaluation, type aliases, extension methods, inferred specialization of generic functions and structs, and statically dispatched traits are available. Closures and JIT remain future work; see the <a href="../examples/README.md">examples</a> and <a href="../docs/LANGUAGE.md#compile-time-evaluation">language reference</a>.</p></section>
 <footer>Cog is experimental. <a href="../ROADMAP.md">Roadmap</a> · <a href="README.md">Tutorial setup and tests</a></footer></main></div>
 <script>
 (() => {

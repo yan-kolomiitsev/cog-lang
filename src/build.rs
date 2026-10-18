@@ -152,7 +152,14 @@ fn reuse(cache: &Path, artifact: &Path, inputs: Hash) -> Option<CompiledProgram>
     program(&bytes).ok()
 }
 
-pub fn project(mut prepared: Prepared, artifact: &Path) -> Result<Built, String> {
+pub fn project(prepared: Prepared, artifact: &Path) -> Result<Built, String> {
+    project_with_warnings(prepared, artifact).map(|(built, _)| built)
+}
+
+pub fn project_with_warnings(
+    mut prepared: Prepared,
+    artifact: &Path,
+) -> Result<(Built, Vec<crate::diagnostic::Diagnostic>), String> {
     let cache = cache_path(&prepared, artifact)?;
     let inputs = fingerprint(&mut prepared, compiler_hash()?)?;
     let dependency_path = cache.with_extension("deps");
@@ -162,13 +169,16 @@ pub fn project(mut prepared: Prepared, artifact: &Path) -> Result<Built, String>
         && let Some(program) = reuse(&cache, artifact, with_dependencies(inputs, &previous))
     {
         project::write_lock(prepared.lock_update)?;
-        return Ok(Built {
-            program,
-            reused: true,
-        });
+        return Ok((
+            Built {
+                program,
+                reused: true,
+            },
+            Vec::new(),
+        ));
     }
     let loaded = prepared.resolve();
-    let compiled = project::compile_with_inputs(
+    let (compiled, warnings) = project::compile_with_inputs_and_warnings(
         loaded.program,
         loaded.diagnostics,
         &loaded.names,
@@ -187,10 +197,13 @@ pub fn project(mut prepared: Prepared, artifact: &Path) -> Result<Built, String>
     atomic_write(&dependency_path, &dependencies)?;
     atomic_write(&cache, &record)?;
     // Execute these validated bytes even if another build later replaces the file.
-    Ok(Built {
-        program,
-        reused: false,
-    })
+    Ok((
+        Built {
+            program,
+            reused: false,
+        },
+        warnings,
+    ))
 }
 
 fn with_dependencies(inputs: Hash, dependencies: &[u8]) -> Hash {

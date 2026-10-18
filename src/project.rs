@@ -703,9 +703,16 @@ pub fn prepare(
 }
 
 pub fn compile_source(name: &str, text: &str) -> Result<crate::backend::CompiledProgram, String> {
+    compile_source_with_warnings(name, text).map(|(program, _)| program)
+}
+
+pub fn compile_source_with_warnings(
+    name: &str,
+    text: &str,
+) -> Result<(crate::backend::CompiledProgram, Vec<Diagnostic>), String> {
     check_embedded_source_size(text)?;
     let inputs = crate::build_inputs::BuildInputs::from_current_dir()?;
-    compile_source_with_inputs(name, text, &inputs)
+    compile_source_with_inputs_and_warnings(name, text, &inputs)
 }
 
 /// Compile an in-memory source with an explicitly captured build-input base.
@@ -714,6 +721,14 @@ pub fn compile_source_with_inputs(
     text: &str,
     inputs: &crate::build_inputs::BuildInputs,
 ) -> Result<crate::backend::CompiledProgram, String> {
+    compile_source_with_inputs_and_warnings(name, text, inputs).map(|(program, _)| program)
+}
+
+pub fn compile_source_with_inputs_and_warnings(
+    name: &str,
+    text: &str,
+    inputs: &crate::build_inputs::BuildInputs,
+) -> Result<(crate::backend::CompiledProgram, Vec<Diagnostic>), String> {
     check_embedded_source_size(text)?;
     let parsed = frontend::parse(name, text);
     let resolved_includes: BTreeSet<_> = parsed
@@ -742,7 +757,7 @@ pub fn compile_source_with_inputs(
     let resolved = Resolver::new(sources, aliases, (0, String::new()))
         .with_resolved_includes(resolved_includes)
         .resolve();
-    compile_with_inputs(
+    compile_with_inputs_and_warnings(
         resolved.program,
         resolved.diagnostics,
         &resolved.names,
@@ -769,10 +784,20 @@ pub fn compile(
 
 pub fn compile_with_inputs(
     program: Program,
-    mut diagnostics: Vec<Diagnostic>,
+    diagnostics: Vec<Diagnostic>,
     names: &BTreeMap<String, String>,
     inputs: &crate::build_inputs::BuildInputs,
 ) -> Result<crate::backend::CompiledProgram, String> {
+    compile_with_inputs_and_warnings(program, diagnostics, names, inputs)
+        .map(|(program, _)| program)
+}
+
+pub fn compile_with_inputs_and_warnings(
+    program: Program,
+    mut diagnostics: Vec<Diagnostic>,
+    names: &BTreeMap<String, String>,
+    inputs: &crate::build_inputs::BuildInputs,
+) -> Result<(crate::backend::CompiledProgram, Vec<Diagnostic>), String> {
     inputs.begin();
     let mut program = program;
     if let Err(message) = crate::ast_budget::program(&program) {
@@ -813,13 +838,14 @@ pub fn compile_with_inputs(
         ));
         return Err(render(diagnostics));
     }
+    let warnings = crate::lint::check(&program);
     let mut compiled = crate::codegen::compile(&program).map_err(|e| render(e.diagnostics))?;
     for name in compiled.functions.values_mut() {
         if let Some(original) = names.get(name) {
             *name = original.clone();
         }
     }
-    Ok(compiled)
+    Ok((compiled, warnings))
 }
 
 pub fn write_lock(update: Option<(PathBuf, String)>) -> Result<(), String> {

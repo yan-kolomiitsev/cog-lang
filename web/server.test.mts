@@ -21,10 +21,10 @@ async function run(source: string, input = "") {
     return response.json();
 }
 
-test("all nine tutorial programs compile and execute through real bytecode", async () => {
+test("all thirteen tutorial programs compile and execute through real bytecode", async () => {
     const html = await readFile(new URL("./get_started.html", import.meta.url), "utf8");
     const sources = [...html.matchAll(/<textarea class="source"[^>]*>([\s\S]*?)<\/textarea>/g)].map(match => match[1].replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&quot;", '"').replaceAll("&#x27;", "'").replaceAll("&amp;", "&"));
-    const outputs = ["Hello, Cog!\n", "Cog: 3\n", "42\n", "Cog: 1\nCog: 3\n", "2\n1\nsum=10, large\n", "[0, 9, 2, 3]\n4\n", "Plain: {name}\nHello, Ada! 2 + 3 = 5\n{Cog}\n", "Move to 2\nmoving\n", "3\n7\nParseFailure\nDone.\n"];
+    const outputs = ["Hello, Cog!\n", "Cog: 3\n", "42\n", "Cog: 1\nCog: 3\n", "2\n1\nsum=10, large\n", "[0, 9, 2, 3]\n4\n", "Plain: {name}\nHello, Ada! 2 + 3 = 5\n{Cog}\n", "Move to 2\nmoving\n", "3\n7\nParseFailure\nDone.\n", "42\nCog\n3\n", "right operand ran\nthe left Error survived the operation\n7\nthe selected array element is an Error\n", "Cog tools\nred / green / blue\n3\n", "42\n"];
     assert.equal(sources.length, outputs.length);
     for (let i = 0; i < sources.length; ++i) {
         const result = await run(sources[i], " Ada \n");

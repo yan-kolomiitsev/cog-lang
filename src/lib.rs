@@ -25,6 +25,7 @@ pub mod instruction;
 pub mod interpreter;
 pub mod lexer;
 pub mod limits;
+mod lint;
 pub mod lockfile;
 pub mod parser;
 pub mod project;
